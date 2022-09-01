@@ -17,7 +17,7 @@ def apply_filter(msg):
 
     try:
         cond = [
-            msg['triggerName'] == 'contractEventTrigger',
+            msg['triggerName'] == 'solidityEventTrigger',
             msg['eventName'] == 'Transfer',
             msg['topicMap']['to'] in FILTER,
         ]

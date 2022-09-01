@@ -36,13 +36,14 @@ def get_symbol_by_addr(addr):
 
 def get_confirmations(txid):
     try:
-        solidity_node = Tron(HTTPProvider(config['SOLIDITYNODE_URL']))
-        tx_info = solidity_node.get_solid_transaction_info(txid)
         full_node = Tron(HTTPProvider(config['FULLNODE_URL']))
         latest_block_number = full_node.get_latest_block_number()
-
+        tx_info = full_node.get_transaction_info(txid)
         confirmations = latest_block_number - tx_info['blockNumber']
+        logger.debug(f"confirmations: {confirmations} = latest_block_number: {latest_block_number} - tx_info['blockNumber'] {tx_info['blockNumber']}")
+
     except tronpy.exceptions.TransactionNotFound:
+        logger.exception('Exception in get_confirmations():')
         confirmations = 0
 
     return confirmations
