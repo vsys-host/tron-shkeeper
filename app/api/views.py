@@ -7,6 +7,7 @@ from tronpy import Tron
 from tronpy.providers import HTTPProvider
 
 from .. import events
+from ..config import get_contract_address
 from ..db import get_db, query_db
 from ..utils import get_confirmations, get_filter_config, get_tron_client
 from . import api
@@ -32,7 +33,7 @@ def generate_new_address():
 @api.post('/balance')
 def get_balance():
     client = get_tron_client()
-    contract_address = current_app.config['TOKENS'][g.symbol]['contract_address']
+    contract_address = get_contract_address(g.symbol)
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
     balance = Decimal(0)
@@ -69,7 +70,7 @@ def get_transaction(txid):
         return {'status': 'error', 'msg': 'txid is not related to any known address'}
 
     client = get_tron_client()
-    contract_address = current_app.config['TOKENS'][g.symbol]['contract_address']
+    contract_address = get_contract_address(g.symbol)
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
     amount = Decimal(event_data['dataMap']['value']) / 10 ** precision

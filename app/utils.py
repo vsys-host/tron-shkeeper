@@ -9,7 +9,7 @@ from tronpy.keys import PrivateKey
 from tronpy.providers import HTTPProvider
 from werkzeug.routing import BaseConverter
 
-from .config import config
+from .config import config, get_contract_address
 from .db import get_db, query_db
 from .logging import logger
 
@@ -72,7 +72,7 @@ def get_network_currency_balance(addr) -> Decimal:
 
 def get_token_balance(addr, symbol) -> Decimal:
     client = get_tron_client()
-    contract_address = config['TOKENS'][symbol]['contract_address']
+    contract_address = get_contract_address(symbol)
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
     balance =  Decimal(contract.functions.balanceOf(addr))
@@ -232,7 +232,7 @@ def transfer(acc_from, acc_to, amount, symbol):
     onetime_account_keys = query_db('select * from keys where type = "onetime" and public = ?', (acc_from,), one=True)
     priv_key = PrivateKey(bytes.fromhex(onetime_account_keys['private']))
 
-    contract_address = config['TOKENS'][symbol]['contract_address']
+    contract_address = get_contract_address(symbol)
     contract = client.get_contract(contract_address)
     txn = (
         contract.functions.transfer(acc_to, int(amount * 1_000_000))
