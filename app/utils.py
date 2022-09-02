@@ -246,7 +246,7 @@ def transfer(acc_from, acc_to, amount, symbol):
 
     return txn.txid
 
-def get_tron_client(node : Literal(['full', 'solidity']) = 'full') -> Tron:
+def get_tron_client(node : Literal['full', 'solidity'] = 'full') -> Tron:
     provider = HTTPProvider(config['FULLNODE_URL'] if node == 'full'
                                                    else config['SOLIDITYNODE_URL'])
     provider.sess.auth = (config['TRON_NODE_USERNAME'] , config['TRON_NODE_PASSWORD'])
