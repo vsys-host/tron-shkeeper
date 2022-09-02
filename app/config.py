@@ -7,9 +7,11 @@ config = {
     'DATABASE': os.environ.get('DATABASE', 'data/database.db'),
 
     'REDIS_HOST': os.environ.get('REDIS_HOST', 'localhost'),
-    'EVENT_SERVER_HOST': os.environ.get('EVENT_SERVER_HOST', 'localhost:5001'),
-    'FULLNODE_URL': os.environ.get('FULLNODE_URL', 'http://62.182.80.10:8090'),
-    'SOLIDITYNODE_URL': os.environ.get('SOLIDITYNODE_URL', 'http://62.182.80.10:8091'),
+    'EVENT_SERVER_HOST': os.environ.get('EVENT_SERVER_HOST', 'events.tron.shkeeper.io'),
+    'FULLNODE_URL': os.environ.get('FULLNODE_URL', 'http://fullnode.tron.shkeeper.io'),
+    'SOLIDITYNODE_URL': os.environ.get('SOLIDITYNODE_URL', 'http://soliditynode.tron.shkeeper.io'),
+    'TRON_NODE_USERNAME': os.environ.get('TRON_NODE_USERNAME', 'shkeeper'),
+    'TRON_NODE_PASSWORD': os.environ.get('TRON_NODE_PASSWORD', 'tron'),
 
     'API_USERNAME': os.environ.get('BTC_USERNAME', 'shkeeper'),
     'API_PASSWORD': os.environ.get('BTC_PASSWORD', 'shkeeper'),

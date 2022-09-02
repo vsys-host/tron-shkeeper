@@ -41,9 +41,10 @@ async def ws_main():
         await asyncio.sleep(1)
     logger.info(f'Filter was set to: {FILTER}')
 
-    logger.info(f"Connecting to the event server at ws://{config['EVENT_SERVER_HOST']} ...")
-    async for websocket in websockets.connect(f"ws://{config['EVENT_SERVER_HOST']}"):
-        logger.info('Connected.')
+    ws_url = f"ws://{config['TRON_NODE_USERNAME']}:{config['TRON_NODE_PASSWORD']}@{config['EVENT_SERVER_HOST']}"
+    logger.info(f"Connecting to the event server at {ws_url}...")
+    async for websocket in websockets.connect(ws_url):
+        logger.info(f'Connected to {ws_url}')
         try:
             async for message in websocket:
                 try:

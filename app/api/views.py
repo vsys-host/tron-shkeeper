@@ -8,7 +8,7 @@ from tronpy.providers import HTTPProvider
 
 from .. import events
 from ..db import get_db, query_db
-from ..utils import get_confirmations, get_filter_config
+from ..utils import get_confirmations, get_filter_config, get_tron_client
 from . import api
 
 
@@ -31,7 +31,7 @@ def generate_new_address():
 
 @api.post('/balance')
 def get_balance():
-    client = Tron(HTTPProvider(current_app.config['FULLNODE_URL']))
+    client = get_tron_client()
     contract_address = current_app.config['TOKENS'][g.symbol]['contract_address']
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
@@ -44,7 +44,7 @@ def get_balance():
 
 @api.post('/status')
 def get_status():
-    client = Tron(HTTPProvider(current_app.config['FULLNODE_URL']))
+    client = get_tron_client()
     block =  client.get_latest_block()
     return {'status': 'success', 'last_block_timestamp': block['block_header']['raw_data']['timestamp'] // 1000}
 
@@ -68,7 +68,7 @@ def get_transaction(txid):
     else:
         return {'status': 'error', 'msg': 'txid is not related to any known address'}
 
-    client = Tron(HTTPProvider(current_app.config['FULLNODE_URL']))
+    client = get_tron_client()
     contract_address = current_app.config['TOKENS'][g.symbol]['contract_address']
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
@@ -85,7 +85,7 @@ def dump():
 
 @api.post('/fee-deposit-account')
 def get_fee_deposit_account():
-    client = Tron(HTTPProvider(current_app.config['FULLNODE_URL']))
+    client = get_tron_client()
     key = query_db('select * from keys where type = "fee_deposit"', one=True)
     try:
         balance = client.get_account_balance(key['public'])

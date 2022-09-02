@@ -36,7 +36,7 @@ def get_symbol_by_addr(addr):
 
 def get_confirmations(txid):
     try:
-        full_node = Tron(HTTPProvider(config['FULLNODE_URL']))
+        full_node = get_tron_client()
         latest_block_number = full_node.get_latest_block_number()
         tx_info = full_node.get_transaction_info(txid)
         confirmations = latest_block_number - tx_info['blockNumber']
@@ -64,14 +64,14 @@ def init_wallet(app):
             logger.info('Fee deposit account has been created.')
 
 def get_network_currency_balance(addr) -> Decimal:
-    client = Tron(HTTPProvider(config['FULLNODE_URL']))
+    client = get_tron_client()
     try:
         return client.get_account_balance(addr)
     except tronpy.exceptions.AddressNotFound:
         return Decimal(0)
 
 def get_token_balance(addr, symbol) -> Decimal:
-    client = Tron(HTTPProvider(config['FULLNODE_URL']))
+    client = get_tron_client()
     contract_address = config['TOKENS'][symbol]['contract_address']
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
@@ -135,7 +135,7 @@ def choose_accounts(amount: float, accounts: list):
     return choosed
 
 def get_bandwidth(account):
-    client = Tron(HTTPProvider(config['FULLNODE_URL']))
+    client = get_tron_client()
     try:
         resources = client.get_account_resource(account)
     except tronpy.exceptions.AddressNotFound:
@@ -164,7 +164,7 @@ def transfer_to_fee_deposit(accounts):
     if not accounts:
         logger.info(f'Onetime accounts have no unused network currency to send back to fee-deposit account.')
 
-    client = Tron(HTTPProvider(config['FULLNODE_URL']))
+    client = get_tron_client()
     fee_deposit_key = query_db('select * from keys where type = "fee_deposit" ', one=True)
 
     for account in accounts:
@@ -185,7 +185,7 @@ def transfer_to_fee_deposit(accounts):
 def seed_payout_fee(accounts):
     """Send network currency enought to make a transaction to each account"""
 
-    client = Tron(HTTPProvider(config['FULLNODE_URL']))
+    client = get_tron_client()
 
     fee_deposit_key = query_db('select * from keys where type = "fee_deposit" ', one=True)
     priv_key = PrivateKey(bytes.fromhex(fee_deposit_key['private']))
@@ -227,7 +227,7 @@ def send_payment(from_accs: list, to: str, symbol: str):
 
 def transfer(acc_from, acc_to, amount, symbol):
     amount = Decimal(amount)
-    client = Tron(HTTPProvider(config['FULLNODE_URL']))
+    client = get_tron_client()
 
     onetime_account_keys = query_db('select * from keys where type = "onetime" and public = ?', (acc_from,), one=True)
     priv_key = PrivateKey(bytes.fromhex(onetime_account_keys['private']))
@@ -245,3 +245,9 @@ def transfer(acc_from, acc_to, amount, symbol):
     logger.info(f'Transfered {amount} {symbol} from {acc_from} to {acc_to} with txid {txn.txid}')
 
     return txn.txid
+
+def get_tron_client(node : Literal(['full', 'solidity']) = 'full') -> Tron:
+    provider = HTTPProvider(config['FULLNODE_URL'] if node == 'full'
+                                                   else config['SOLIDITYNODE_URL'])
+    provider.sess.auth = (config['TRON_NODE_USERNAME'] , config['TRON_NODE_PASSWORD'])
+    return Tron(provider)
