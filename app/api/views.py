@@ -10,6 +10,7 @@ from .. import events
 from ..config import get_contract_address
 from ..db import get_db, query_db
 from ..utils import get_confirmations, get_filter_config, get_tron_client
+from ..logging import logger
 from . import api
 
 
@@ -27,6 +28,7 @@ def generate_new_address():
     db.commit()
 
     events.FILTER = get_filter_config()
+    logger.info(f'Filter was set to: {events.FILTER}')
 
     return {'status': 'success', 'base58check_address': addresses['base58check_address']}
 
