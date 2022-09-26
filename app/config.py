@@ -6,6 +6,7 @@ config = {
     'TRON_NETWORK': os.environ.get('TRON_NETWORK', 'main'),  # main, nile
     'DEBUG': os.environ.get('DEBUG', False),
     'DATABASE': os.environ.get('DATABASE', 'data/database.db'),
+    'CONCURRENT_MAX_WORKERS': int(os.environ.get('CONCURRENT_MAX_WORKERS', 15)),
 
     'REDIS_HOST': os.environ.get('REDIS_HOST', 'localhost'),
     'EVENT_SERVER_HOST': os.environ.get('EVENT_SERVER_HOST', 'events.tron.shkeeper.io'),

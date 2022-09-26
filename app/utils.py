@@ -1,6 +1,7 @@
 import logging
 from decimal import Decimal
 from typing import Literal
+import concurrent
 
 import tronpy.exceptions
 from flask import current_app
@@ -251,3 +252,14 @@ def get_tron_client(node : Literal['full', 'solidity'] = 'full') -> Tron:
                                                    else config['SOLIDITYNODE_URL'])
     provider.sess.auth = (config['TRON_NODE_USERNAME'] , config['TRON_NODE_PASSWORD'])
     return Tron(provider)
+
+def get_wallet_balance(symbol) -> Decimal:
+    client = get_tron_client()
+    contract_address = get_contract_address(symbol)
+    contract = client.get_contract(contract_address)
+    precision = contract.functions.decimals()
+    balance = Decimal(0)
+    accounts = [row['public'] for row in query_db('select public from keys where symbol = ? and type = "onetime"', (symbol,))]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
+        balance = sum(executor.map(lambda acc: Decimal(contract.functions.balanceOf(acc)), accounts)) / 10 ** precision
+    return balance

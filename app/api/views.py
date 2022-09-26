@@ -9,7 +9,7 @@ from tronpy.providers import HTTPProvider
 from .. import events
 from ..config import get_contract_address
 from ..db import get_db, query_db
-from ..utils import get_confirmations, get_filter_config, get_tron_client
+from ..utils import get_confirmations, get_filter_config, get_tron_client, get_wallet_balance
 from ..logging import logger
 from . import api
 
@@ -34,15 +34,7 @@ def generate_new_address():
 
 @api.post('/balance')
 def get_balance():
-    client = get_tron_client()
-    contract_address = get_contract_address(g.symbol)
-    contract = client.get_contract(contract_address)
-    precision = contract.functions.decimals()
-    balance = Decimal(0)
-    for row in  query_db('select public from keys where symbol = ? and type = "onetime"', (g.symbol,)):
-        balance += Decimal(contract.functions.balanceOf(row['public']) )
-    balance = balance / 10 ** precision
-
+    balance = get_wallet_balance(g.symbol)
     return {'status': 'success', 'balance': balance}
 
 @api.post('/status')
