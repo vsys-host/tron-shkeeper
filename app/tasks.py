@@ -36,7 +36,7 @@ def transfer_unused_fee():
     #
     # We are sending the entire TRX balance,
     # so there will be no TRX to burn for sure.
-    transfer_to_fee_deposit(get_non_empty_accounts(filter='currency'))
+    transfer_to_fee_deposit(get_non_empty_accounts(fltr='currency'))
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):

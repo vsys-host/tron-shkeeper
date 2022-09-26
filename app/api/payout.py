@@ -45,4 +45,4 @@ def transfer_back():
 
 @api.post('/balances/<type>')
 def get_balances(type='tokens'):
-    return {'accounts': get_non_empty_accounts(g.symbol, filter=type)}
+    return {'accounts': get_non_empty_accounts(g.symbol, fltr=type)}

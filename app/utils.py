@@ -79,7 +79,7 @@ def get_token_balance(addr, symbol) -> Decimal:
     balance =  Decimal(contract.functions.balanceOf(addr))
     return balance / 10 ** precision
 
-def get_non_empty_accounts(symbol=None, filter: Literal['tokens','currency'] = 'tokens'):
+def get_non_empty_accounts(symbol=None, fltr: Literal['tokens','currency'] = 'tokens'):
     """Return a list of accounts having non empty token balance.
 
     Filter sets the balance type to check: tokens (default) or currency."""
@@ -89,18 +89,21 @@ def get_non_empty_accounts(symbol=None, filter: Literal['tokens','currency'] = '
     else:
         rows = query_db('select public from keys where type = "onetime"')
 
-    accounts = []
-    for row in rows:
+    def f(row):
         tokens = get_token_balance(row['public'], symbol) if symbol else Decimal(0)
         currency = get_network_currency_balance(row['public'])
         bandwidth = get_bandwidth(row['public'])
-        if (filter == 'tokens' and tokens) or (filter == 'currency' and currency):
-            accounts.append({
+        if (fltr == 'tokens' and tokens) or (fltr == 'currency' and currency):
+            return {
                 'addr': row['public'],
                 'token_balance': tokens,
                 'network_currency_balance': currency,
                 'bandwidth': bandwidth,
-            })
+            }
+
+    accounts = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
+        accounts = list(filter(None, executor.map(f, rows)))
 
     accounts.sort(key=lambda x: x['token_balance'], reverse=True)
     return accounts
