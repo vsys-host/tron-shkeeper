@@ -1,5 +1,6 @@
 import logging
 from decimal import Decimal
+import time
 from typing import Literal
 import concurrent
 
@@ -108,36 +109,6 @@ def get_non_empty_accounts(symbol=None, fltr: Literal['tokens','currency'] = 'to
     accounts.sort(key=lambda x: x['token_balance'], reverse=True)
     return accounts
 
-
-def choose_accounts(amount: float, accounts: list):
-
-    if amount <= 0:
-        raise Exception(f'Invalid amount porivded: {amount}')
-
-    single_address_has_amount = list(filter(lambda x: x['token_balance'] == amount, accounts))
-    if single_address_has_amount:
-        return [single_address_has_amount[0]]
-
-    accounts_sum = sum(map(lambda x: x['token_balance'], accounts))
-    if amount == accounts_sum:
-        return accounts
-    if amount > accounts_sum:
-        raise Exception(f'Not enough tokens to pay out {amount}. Has only {accounts_sum}')
-
-    choosed = []
-    for account in accounts:
-        choosed_sum = sum(map(lambda x: x['token_balance'], choosed))
-        if choosed_sum == amount:
-            return choosed
-        if choosed_sum < amount:
-            if account['token_balance'] > (amount - choosed_sum):
-                account['orig_token_balance'] = account['token_balance']
-                account['token_balance'] = amount - choosed_sum
-                choosed.append(account)
-            else:
-                choosed.append(account)
-    return choosed
-
 def get_bandwidth(account):
     client = get_tron_client()
     try:
@@ -184,71 +155,6 @@ def transfer_to_fee_deposit(accounts):
             logger.info(f"TX {txn.txid} sent from: {account['addr']} to: {fee_deposit_key['public']} value: {account['network_currency_balance']}")
         except tronpy.exceptions.ValidationError as e:
             logger.info(f"Error while transferring to fee deposit account from {account['addr']}: {e}")
-
-
-def seed_payout_fee(accounts):
-    """Send network currency enought to make a transaction to each account"""
-
-    client = get_tron_client()
-
-    fee_deposit_key = query_db('select * from keys where type = "fee_deposit" ', one=True)
-    priv_key = PrivateKey(bytes.fromhex(fee_deposit_key['private']))
-
-    accounts_need_seeding = len(list(filter(lambda x: x['network_currency_balance'] < config['TX_FEE'], accounts)))
-    fee_deposit_account_balance = client.get_account_balance(fee_deposit_key['public'])
-
-
-    need_currency = accounts_need_seeding * config['TX_FEE']
-    if fee_deposit_account_balance < need_currency:
-        raise Exception(f'Fee deposit account has not enought currency. Has: {fee_deposit_account_balance} need: {need_currency}')
-
-    results = []
-    for account in accounts:
-        if account['network_currency_balance'] >= config['TX_FEE']:
-            logger.info(f"Skipping {account['addr']}: network currency balance is {account['network_currency_balance']}")
-            continue
-
-        txn = (
-            client.trx.transfer(fee_deposit_key['public'], account['addr'], int(config['TX_FEE'] * 1_000_000))
-            .build()
-            .sign(priv_key)
-        )
-        txn.broadcast().wait()
-        logger.info(f"TX {txn.txid} sent from: {fee_deposit_key['public']} to: {account['addr']} value: {config['TX_FEE']}")
-        results.append({'addr': account['addr'], 'txid': txn.txid})
-    return results
-
-def send_payment(from_accs: list, to: str, symbol: str):
-    result = []
-    for account in from_accs:
-        txid = transfer(account['addr'], to, account['token_balance'], symbol)
-        result.append({
-            'addr': account['addr'],
-            'amount': account['token_balance'],
-            'txid': txid,
-        })
-    return result
-
-def transfer(acc_from, acc_to, amount, symbol):
-    amount = Decimal(amount)
-    client = get_tron_client()
-
-    onetime_account_keys = query_db('select * from keys where type = "onetime" and public = ?', (acc_from,), one=True)
-    priv_key = PrivateKey(bytes.fromhex(onetime_account_keys['private']))
-
-    contract_address = get_contract_address(symbol)
-    contract = client.get_contract(contract_address)
-    txn = (
-        contract.functions.transfer(acc_to, int(amount * 1_000_000))
-        .with_owner(onetime_account_keys['public'])
-        .fee_limit(int(config['TX_FEE_LIMIT'] * 1_000_000))
-        .build()
-        .sign(priv_key)
-    )
-    txn.broadcast().wait()
-    logger.info(f'Transfered {amount} {symbol} from {acc_from} to {acc_to} with txid {txn.txid}')
-
-    return txn.txid
 
 def get_tron_client(node : Literal['full', 'solidity'] = 'full') -> Tron:
     provider = HTTPProvider(config['FULLNODE_URL'] if node == 'full'

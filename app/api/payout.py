@@ -1,36 +1,27 @@
-from decimal import Decimal
 
 from flask import g
 
 from .. import celery
-from ..config import config
-from ..db import query_db
 from ..tasks import payout as payout_task
 from ..tasks import prepare_payout as prepare_payout_task
 from ..tasks import transfer_unused_fee
-from ..utils import choose_accounts, get_non_empty_accounts
+from ..utils import get_non_empty_accounts
 from . import api
+from ..trc20wallet import PayoutStrategy, Trc20Wallet
 
 
 @api.post('/calc-tx-fee/<decimal:amount>')
 def calc_tx_fee(amount):
-    accounts = get_non_empty_accounts(g.symbol)
-    choosen_accounts = choose_accounts(amount, accounts)
-    accounts_num = len(choosen_accounts)
-    activation_and_transfer_fee = 2
-    fee = accounts_num * (config['TX_FEE'] + activation_and_transfer_fee)
-    return {
-        'accounts_num': accounts_num,
-        'fee': fee,
-    }
+    w = Trc20Wallet(g.symbol)
+    payout_list = [{'dest': 'calc-tx-fee', 'amount': amount}]
+    ps = PayoutStrategy(w, payout_list)
+    return ps.estimate_fee()
 
 @api.post('/payout/<to>/<decimal:amount>')
 def payout(to, amount):
-    # run payout_task(prepare_payout_task(...), ...) if prepare_payout_task exited successfully
     task = (
-        prepare_payout_task.s(amount, g.symbol) | payout_task.s(to, g.symbol)
+        prepare_payout_task.s(to, amount, g.symbol) | payout_task.s(g.symbol)
     ).apply_async()
-    # return {'prepare_payout_task_id': task.id, 'payout_task_id': task.children[0].id}
     return {'task_id': task.id}
 
 @api.post('/task/<id>')

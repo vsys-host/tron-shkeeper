@@ -27,11 +27,17 @@ def apply_filter(msg):
     return bool(cond and all(cond))
 
 async def notify_shkeeper(symbol, txid):
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f'http://{config["SHKEEPER_HOST"]}/api/v1/walletnotify/{symbol}/{txid}',
-            headers={'X-Shkeeper-Backend-Key': config['SHKEEPER_KEY']}
-        )
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(
+                    f'http://{config["SHKEEPER_HOST"]}/api/v1/walletnotify/{symbol}/{txid}',
+                    headers={'X-Shkeeper-Backend-Key': config['SHKEEPER_KEY']}
+                )
+                return r
+        except Exception as e:
+            logger.exception(f'Shkeeper notification exception for {symbol}/{txid}')
+            await asyncio.sleep(10)
 
 async def ws_main():
 

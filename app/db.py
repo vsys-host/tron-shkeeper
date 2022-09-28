@@ -27,6 +27,14 @@ def query_db(query, args=(), one=False):
     cur.close()
     return (rv[0] if rv else None) if one else rv
 
+def query_db2(query, args=(), one=False):
+    db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+    db.row_factory = sqlite3.Row
+    cur = db.execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
+
 def init_db(app):
     with app.app_context():
         db = get_db()

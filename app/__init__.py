@@ -7,7 +7,11 @@ from .config import config
 celery = Celery(
     __name__,
     broker=f'redis://{config["REDIS_HOST"]}',
-    backend=f'redis://{config["REDIS_HOST"]}'
+    backend=f'redis://{config["REDIS_HOST"]}',
+    task_serializer='pickle',
+    accept_content=['pickle'],
+    result_serializer='pickle',
+    result_accept_content=['pickle'],
 )
 
 def create_app():
