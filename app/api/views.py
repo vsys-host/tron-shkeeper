@@ -11,6 +11,7 @@ from ..config import get_contract_address
 from ..db import get_db, query_db
 from ..utils import get_confirmations, get_filter_config, get_tron_client, get_wallet_balance
 from ..logging import logger
+from ..trc20wallet import Trc20Wallet
 from . import api
 
 
@@ -34,7 +35,8 @@ def generate_new_address():
 
 @api.post('/balance')
 def get_balance():
-    balance = get_wallet_balance(g.symbol)
+    w = Trc20Wallet(g.symbol)
+    balance = w.tokens
     return {'status': 'success', 'balance': balance}
 
 @api.post('/status')
