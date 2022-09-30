@@ -62,16 +62,34 @@ def refresh_trc20_balances(symbol):
             logger.error(f"{config['BALANCES_DATABASE']} error: {e}")
             return e
 
-        w = Trc20Wallet(symbol, refresh=False)
-        updated =0
+        w = Trc20Wallet(symbol)
+        updated = 0
         for acc in w.refresh_accounts():
             try:
+                # tokens
                 if cur.execute("SELECT * FROM trc20balances WHERE account = ? and symbol = ?", (acc.addr, symbol)).fetchone():
                     cur.execute("UPDATE trc20balances SET balance = ?, updated_at = ? WHERE account = ? AND symbol = ?",
                                 (acc.tokens, datetime.datetime.now(), acc.addr, symbol))
                 else:
                     cur.execute("INSERT INTO trc20balances VALUES (?, ?, ?, ?)",
                                 (acc.addr, symbol, acc.tokens, datetime.datetime.now()))
+
+                # currency
+                if cur.execute("SELECT * FROM trc20balances WHERE account = ? and symbol = ?", (acc.addr, '_currency')).fetchone():
+                    cur.execute("UPDATE trc20balances SET balance = ?, updated_at = ? WHERE account = ? AND symbol = ?",
+                                (acc.currency, datetime.datetime.now(), acc.addr, '_currency'))
+                else:
+                    cur.execute("INSERT INTO trc20balances VALUES (?, ?, ?, ?)",
+                                (acc.addr, '_currency', acc.currency, datetime.datetime.now()))
+
+                # bandwidth
+                if cur.execute("SELECT * FROM trc20balances WHERE account = ? and symbol = ?", (acc.addr, '_bandwidth')).fetchone():
+                    cur.execute("UPDATE trc20balances SET balance = ?, updated_at = ? WHERE account = ? AND symbol = ?",
+                                (acc.bandwidth, datetime.datetime.now(), acc.addr, '_bandwidth'))
+                else:
+                    cur.execute("INSERT INTO trc20balances VALUES (?, ?, ?, ?)",
+                                (acc.addr, '_bandwidth', acc.bandwidth, datetime.datetime.now()))
+
                 updated += 1
             except Exception as e:
                 logger.exception(f'Exception while updating {symbol} balance for {acc.addr}: {e}')

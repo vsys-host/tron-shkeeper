@@ -1,5 +1,6 @@
 import concurrent
 from copy import copy
+import sqlite3
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -29,18 +30,16 @@ class Account:
 
 class Trc20Wallet:
 
-    def __init__(self, symbol, refresh=True):
+    def __init__(self, symbol):
         self.symbol = symbol
         self.client = get_tron_client()
         self.contract = self.client.get_contract(get_contract_address(symbol))
         self.precision = self.contract.functions.decimals()
-        if refresh:
-            self.accounts = self.refresh_accounts()
+        self.accounts = self.init_accounts()
+
 
     def refresh_accounts(self) -> List[Account]:
         public_keys = [row['public'] for row in query_db2('select public from keys where symbol = ? and type = "onetime"', (self.symbol, ))]
-
-        # public_keys = NILE_ACCS[-200:]
 
         def get(addr) -> Account:
             retries = 0
@@ -59,6 +58,33 @@ class Trc20Wallet:
                     logger.exception(f'Exception during {addr} refresh: {e}')
                     retries += 1
             raise Exception(f'CONCURRENT_MAX_RETRIES exeeded while processing {addr}')
+
+        start = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
+            accounts = list(executor.map(get, public_keys))
+            accounts.sort(key=lambda account: account.tokens, reverse=True)
+            self.last_refresh_duration = time.time() - start
+            return accounts
+
+    def init_accounts(self) -> List[Account]:
+        public_keys = [row['public'] for row in query_db2('select public from keys where symbol = ? and type = "onetime"', (self.symbol, ))]
+
+
+        def get(addr) -> Account:
+            retries = 0
+            while retries < config['CONCURRENT_MAX_RETRIES']:
+                try:
+                    con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+                    con.row_factory = sqlite3.Row
+                    cur = con.cursor()
+                    tokens = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, self.symbol)).fetchone()['balance']
+                    currency = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_currency')).fetchone()['balance']
+                    bandwidth = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_bandwidth')).fetchone()['balance']
+                    return Account(addr=addr, tokens=tokens, currency=currency, bandwidth=bandwidth)
+                except Exception as e:
+                    logger.exception(f'Exception during Account(addr="{addr}") initialization: {e}')
+                    retries += 1
+            raise Exception(f'CONCURRENT_MAX_RETRIES exeeded during Account(addr="{addr}") initialization')
 
         start = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
