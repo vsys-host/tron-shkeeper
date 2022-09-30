@@ -42,9 +42,17 @@ def init_db(app):
             db.cursor().executescript(f.read())
         db.commit()
 
+def init_balances_db(app):
+    with app.app_context():
+        db = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+        with app.open_resource('trc20balances.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
+
 def init_app(app):
     app.teardown_appcontext(close_db)
     init_db(app)
+    init_balances_db(app)
 
 def save_event(txid, event):
     try:

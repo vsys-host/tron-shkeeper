@@ -1,5 +1,7 @@
 import concurrent
+import datetime
 import decimal
+import sqlite3
 
 from celery.schedules import crontab
 from celery.utils.log import get_task_logger
@@ -49,6 +51,28 @@ def payout(steps, symbol):
             return list(executor.map(transfer, step))
 
 @celery.task()
+def refresh_trc20_balances(symbol):
+    w = Trc20Wallet(symbol, refresh=False)
+    con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+    con.execute('PRAGMA journal_mode=wal')
+    cur = con.cursor()
+    for acc in w.refresh_accounts():
+        try:
+            if cur.execute("SELECT * FROM trc20balances WHERE account = ? and symbol = ?", (acc.addr, symbol)).fetchone():
+                cur.execute("UPDATE trc20balances SET balance = ?, updated_at = ? WHERE account = ? AND symbol = ?",
+                            (acc.tokens, datetime.datetime.now(), acc.addr, symbol))
+            else:
+                cur.execute("INSERT INTO trc20balances VALUES (?, ?, ?, ?)",
+                            (acc.addr, symbol, acc.tokens, datetime.datetime.now()))
+            con.commit()
+        except sqlite3.OperationalError as e:
+            logger.error(f"{config['BALANCES_DATABASE']} write error: {e}")
+            return
+        except Exception as e:
+            logger.exception(f'Exception while updating {symbol} balance for {acc.addr}: {e}')
+    con.close()
+
+@celery.task()
 def transfer_unused_fee():
     # We don't need to check if accounts have a free bandwidth units
     # because tx will raise tronpy.exceptions.ValidationError
@@ -64,3 +88,6 @@ def setup_periodic_tasks(sender, **kwargs):
         crontab(hour=0, minute=0),
         transfer_unused_fee.s(),
     )
+
+    # Update USDT balances
+    sender.add_periodic_task(config['UPDATE_TOKEN_BALANCES_EVERY_SECONDS'], refresh_trc20_balances.s('USDT'))

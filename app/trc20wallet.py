@@ -29,12 +29,13 @@ class Account:
 
 class Trc20Wallet:
 
-    def __init__(self, symbol):
+    def __init__(self, symbol, refresh=True):
         self.symbol = symbol
         self.client = get_tron_client()
         self.contract = self.client.get_contract(get_contract_address(symbol))
         self.precision = self.contract.functions.decimals()
-        self.accounts = self.refresh_accounts()
+        if refresh:
+            self.accounts = self.refresh_accounts()
 
     def refresh_accounts(self) -> List[Account]:
         public_keys = [row['public'] for row in query_db2('select public from keys where symbol = ? and type = "onetime"', (self.symbol, ))]
@@ -52,7 +53,7 @@ class Trc20Wallet:
                     except tronpy.exceptions.AddressNotFound:
                         currency = Decimal(0)
                         bandwidth = 0
-                    logger.info(f"{addr} -> {tokens}")
+                    logger.debug(f"{addr} -> {tokens}")
                     return Account(addr=addr, tokens=tokens, currency=currency, bandwidth=bandwidth)
                 except tronpy.exceptions.UnknownError as e:
                     logger.exception(f'Exception during {addr} refresh: {e}')

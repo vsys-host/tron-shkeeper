@@ -6,8 +6,10 @@ config = {
     'TRON_NETWORK': os.environ.get('TRON_NETWORK', 'main'),  # main, nile
     'DEBUG': os.environ.get('DEBUG', False),
     'DATABASE': os.environ.get('DATABASE', 'data/database.db'),
+    'BALANCES_DATABASE': os.environ.get('BALANCES_DATABASE', 'data/trc20balances.db'),
     'CONCURRENT_MAX_WORKERS': int(os.environ.get('CONCURRENT_MAX_WORKERS', 15)),
     'CONCURRENT_MAX_RETRIES': int(os.environ.get('CONCURRENT_MAX_RETRIES', 10)),
+    'UPDATE_TOKEN_BALANCES_EVERY_SECONDS': int(os.environ.get('UPDATE_TOKEN_BALANCES_EVERY_SECONDS', 60)),
 
     'REDIS_HOST': os.environ.get('REDIS_HOST', 'localhost'),
     'EVENT_SERVER_HOST': os.environ.get('EVENT_SERVER_HOST', 'events.tron.shkeeper.io'),

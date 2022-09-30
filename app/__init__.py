@@ -14,6 +14,10 @@ celery = Celery(
     result_accept_content=['pickle'],
 )
 
+import decimal, sqlite3
+sqlite3.register_adapter(decimal.Decimal, lambda x: str(x))
+sqlite3.register_converter("DECTEXT", lambda x: decimal.Decimal(x.decode()))
+
 def create_app():
 
     app = Flask(__name__)
