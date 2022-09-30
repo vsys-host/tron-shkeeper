@@ -10,6 +10,7 @@ from tronpy import Tron
 from tronpy.keys import PrivateKey
 from tronpy.providers import HTTPProvider
 from werkzeug.routing import BaseConverter
+import requests
 
 from .config import config, get_contract_address
 from .db import get_db, query_db
@@ -160,6 +161,9 @@ def get_tron_client(node : Literal['full', 'solidity'] = 'full') -> Tron:
     provider = HTTPProvider(config['FULLNODE_URL'] if node == 'full'
                                                    else config['SOLIDITYNODE_URL'])
     provider.sess.auth = (config['TRON_NODE_USERNAME'] , config['TRON_NODE_PASSWORD'])
+    adapter = requests.adapters.HTTPAdapter(pool_maxsize=(config['CONCURRENT_MAX_WORKERS'] + 1))
+    provider.sess.mount('http://', adapter)
+    provider.sess.mount('https://', adapter)
     return Tron(provider)
 
 def get_wallet_balance(symbol) -> Decimal:
