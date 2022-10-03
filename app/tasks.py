@@ -24,6 +24,16 @@ def prepare_payout(dest, amount, symbol):
     return steps
 
 @celery.task()
+def prepare_multipayout(payout_list, symbol):
+    wallet = Trc20Wallet(symbol)
+    ps = PayoutStrategy(wallet, payout_list)
+    logger.info(f"Preparing payout for {sum([t['amount'] for t in payout_list])} "
+                f"{symbol} to {len(payout_list)} destinations.")
+    steps = ps.generate_steps()
+    seed_results = ps.seed_payout_fees()
+    return steps
+
+@celery.task()
 def payout(steps, symbol):
 
     client = get_tron_client()
@@ -41,14 +51,22 @@ def payout(steps, symbol):
             )
             txn.broadcast().wait()
             logger.info(f"Transfer {spec['amount']} {symbol} {spec['src'].addr} -> {spec['dst']} | {txn.txid}")
-            return {'txid': txn.txid}
+            return txn.txid
 
         except Exception as e:
             logger.exception(f"Error during transfer {spec['amount']} {symbol} {spec['src'].addr} -> {spec['dst']}: {e}")
 
+    payout_results = []
     for step in steps:
         with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
-            return list(executor.map(transfer, step))
+            txids = list(executor.map(transfer, step))
+            payout_results.append({
+                "dest": step[0]['dst'],
+                "amount": sum([t['amount'] for t in step]),
+                "status": "success",
+                "txids": txids,
+            })
+    return payout_results
 
 @celery.task()
 def refresh_trc20_balances(symbol):

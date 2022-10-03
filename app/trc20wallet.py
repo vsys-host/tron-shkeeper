@@ -37,6 +37,7 @@ class Trc20Wallet:
         self.precision = self.contract.functions.decimals()
         if init:
             self.accounts = self.init_accounts()
+        self.fee_account = None
 
 
     def refresh_accounts(self) -> List[Account]:
@@ -114,6 +115,19 @@ class Trc20Wallet:
     def accounts_with_currency(self):
         return list(filter(lambda acc: acc.currency > 0, self.accounts))
 
+    @property
+    def fee_deposit_account(self):
+        if self.fee_account:
+            return self.fee_account
+        else:
+            addr = query_db2('select * from keys where type = "fee_deposit"', one=True)['public']
+            try:
+                currency = self.client.get_account_balance(addr)
+            except tronpy.exceptions.AddressNotFound:
+                currency = Decimal(0)
+            self.fee_account = Account(addr=addr, currency=currency)
+            return self.fee_account
+
 
 class PayoutStrategy:
 
@@ -131,6 +145,9 @@ class PayoutStrategy:
             raise Exception(f'Not enough tokens to complete payout. Need: {payout_total}, has: {self.wallet.tokens}')
 
     def generate_steps(self):
+        if self.steps:
+            return self.steps
+
         for i, payout in enumerate(self.payout_list, 1):
             logger.info(f"Step {i}")
             logger.info(f"Wallet token balance: {self.wallet.tokens}")
