@@ -30,12 +30,13 @@ class Account:
 
 class Trc20Wallet:
 
-    def __init__(self, symbol):
+    def __init__(self, symbol, init=True):
         self.symbol = symbol
         self.client = get_tron_client()
         self.contract = self.client.get_contract(get_contract_address(symbol))
         self.precision = self.contract.functions.decimals()
-        self.accounts = self.init_accounts()
+        if init:
+            self.accounts = self.init_accounts()
 
 
     def refresh_accounts(self) -> List[Account]:

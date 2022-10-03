@@ -62,7 +62,7 @@ def refresh_trc20_balances(symbol):
             logger.error(f"{config['BALANCES_DATABASE']} error: {e}")
             return e
 
-        w = Trc20Wallet(symbol)
+        w = Trc20Wallet(symbol, init=False)
         updated = 0
         for acc in w.refresh_accounts():
             try:
