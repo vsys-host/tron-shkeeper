@@ -56,6 +56,19 @@ def multipayout():
         raise Exception(f"Not enough TRX tokens at fee-deposit account {wallet.fee_deposit_account.addr} to pay for payout fees. "
                         f"Has: {wallet.fee_deposit_account.currency}, need: {need_currency}")
 
+    if 'dryrun' in request.args:
+        return {
+            'currency': {
+                'need': need_currency,
+                'have': wallet.fee_deposit_account.currency,
+            },
+            'tokens': {
+                'need': need_tokens,
+                'have': wallet.tokens,
+            },
+            'steps': ps.steps,
+        }
+
     task = ( prepare_multipayout.s(payout_list, g.symbol) | payout_task.s(g.symbol) ).apply_async()
     return {'task_id': task.id}
 
