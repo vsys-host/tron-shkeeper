@@ -183,8 +183,7 @@ class PayoutStrategy:
 
         fee_deposit_account_balance = self.wallet.client.get_account_balance(fee_deposit_key['public'])
         accounts_need_seeding = [transfer['src'] for transfers in self.steps
-                                                 for transfer in transfers
-                                                    if transfer['src'].currency < config['TX_FEE']]
+                                                 for transfer in transfers]
 
         need_currency = len(accounts_need_seeding) * config['TX_FEE']
         if fee_deposit_account_balance < need_currency:
@@ -192,7 +191,7 @@ class PayoutStrategy:
 
         def seed(acc: Account):
             try:
-                amount_to_seed = config['TX_FEE'] - acc.currency
+                amount_to_seed = config['TX_FEE']
                 txn = (
                     self.wallet.client.trx.transfer(fee_deposit_key['public'], acc.addr, int(amount_to_seed * 1_000_000))
                     .build()
