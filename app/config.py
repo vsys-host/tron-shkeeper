@@ -29,9 +29,13 @@ config = {
     'TOKENS': {
         'main': {
             'USDT': {'contract_address': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'},
+            'USDC': {'contract_address': 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8'},
         },
         'nile': {
             'USDT': {'contract_address': 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj'},
+            # USDC is not on Nile testnet, so use USDT contract instead
+            # good enough for testing purposes
+            'USDC': {'contract_address': 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj'},
         },
     },
 }

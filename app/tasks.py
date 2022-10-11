@@ -131,5 +131,6 @@ def setup_periodic_tasks(sender, **kwargs):
         transfer_unused_fee.s(),
     )
 
-    # Update USDT balances
+    # Update cached account balances
     sender.add_periodic_task(config['UPDATE_TOKEN_BALANCES_EVERY_SECONDS'], refresh_trc20_balances.s('USDT'))
+    sender.add_periodic_task(config['UPDATE_TOKEN_BALANCES_EVERY_SECONDS'], refresh_trc20_balances.s('USDC'))
