@@ -79,9 +79,12 @@ class Trc20Wallet:
                     con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
                     con.row_factory = sqlite3.Row
                     cur = con.cursor()
-                    tokens = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, self.symbol)).fetchone()['balance']
-                    currency = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_currency')).fetchone()['balance']
-                    bandwidth = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_bandwidth')).fetchone()['balance']
+                    tokens_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, self.symbol)).fetchone()
+                    tokens = tokens_query['balance'] if tokens_query else Decimal(0)
+                    currency_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_currency')).fetchone()
+                    currency = currency_query['balance'] if currency_query else Decimal(0)
+                    bandwidth_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_bandwidth')).fetchone()
+                    bandwidth = bandwidth_query['balance'] if bandwidth_query else Decimal(0)
                     return Account(addr=addr, tokens=tokens, currency=currency, bandwidth=bandwidth)
                 except Exception as e:
                     logger.exception(f'Exception during Account(addr="{addr}") initialization: {e}')
