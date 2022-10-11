@@ -5,6 +5,7 @@ config = {
 
     'TRON_NETWORK': os.environ.get('TRON_NETWORK', 'main'),  # main, nile
     'DEBUG': os.environ.get('DEBUG', False),
+    'LOGGING_LEVEL': os.environ.get('LOGGING_LEVEL', 'INFO'),
     'DATABASE': os.environ.get('DATABASE', 'data/database.db'),
     'BALANCES_DATABASE': os.environ.get('BALANCES_DATABASE', 'data/trc20balances.db'),
     'CONCURRENT_MAX_WORKERS': int(os.environ.get('CONCURRENT_MAX_WORKERS', 15)),

@@ -29,7 +29,7 @@ def generate_new_address():
     db.commit()
 
     events.FILTER = get_filter_config()
-    logger.info(f'Filter was set to: {events.FILTER}')
+    logger.info(f'Filter was updated. Total accounts: {events.analyze_filter(events.FILTER)}')
 
     return {'status': 'success', 'base58check_address': addresses['base58check_address']}
 
