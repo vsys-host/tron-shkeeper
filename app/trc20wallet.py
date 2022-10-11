@@ -57,7 +57,7 @@ class Trc20Wallet:
                     logger.debug(f"{addr} -> {tokens}")
                     return Account(addr=addr, tokens=tokens, currency=currency, bandwidth=bandwidth)
                 except tronpy.exceptions.UnknownError as e:
-                    logger.exception(f'Exception during {addr} refresh: {e}')
+                    logger.warning(f'Error during {addr} refresh: {e}')
                     retries += 1
             raise Exception(f'CONCURRENT_MAX_RETRIES exeeded while processing {addr}')
 
