@@ -2,10 +2,12 @@ import concurrent
 import datetime
 import decimal
 import sqlite3
+import time
 
 from celery.schedules import crontab
 from celery.utils.log import get_task_logger
 from tronpy.keys import PrivateKey
+import requests
 
 from . import celery
 from .config import config, get_contract_address
@@ -62,11 +64,25 @@ def payout(steps, symbol):
             txids = list(executor.map(transfer, step))
             payout_results.append({
                 "dest": step[0]['dst'],
-                "amount": sum([t['amount'] for t in step]),
+                "amount": str(sum([t['amount'] for t in step])),
                 "status": "success",
                 "txids": txids,
             })
+    post_payout_results.delay(payout_results, symbol)
     return payout_results
+
+@celery.task()
+def post_payout_results(data, symbol):
+    while True:
+        try:
+            return requests.post(
+                f'http://{config["SHKEEPER_HOST"]}/api/v1/payoutnotify/{symbol}',
+                headers={'X-Shkeeper-Backend-Key': config['SHKEEPER_KEY']},
+                json=data,
+            )
+        except Exception as e:
+            logger.warning(f'Shkeeper payout notification failed: {e}')
+            time.sleep(10)
 
 @celery.task()
 def refresh_trc20_balances(symbol):
