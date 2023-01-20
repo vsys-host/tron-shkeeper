@@ -85,4 +85,4 @@ async def ws_main():
             logger.exception(f"Exception in event listener")
 
 def events_listener():
-    asyncio.run(ws_main(), debug=True)
+    asyncio.run(ws_main(), debug=False)
