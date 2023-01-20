@@ -10,8 +10,9 @@ from .logging import logger
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(
-            current_app.config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES
+            current_app.config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None
         )
+        g.db.execute('pragma journal_mode=wal;')
         g.db.row_factory = sqlite3.Row
 
     return g.db
@@ -28,7 +29,8 @@ def query_db(query, args=(), one=False):
     return (rv[0] if rv else None) if one else rv
 
 def query_db2(query, args=(), one=False):
-    db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+    db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
+    db.execute('pragma journal_mode=wal;')
     db.row_factory = sqlite3.Row
     cur = db.execute(query, args)
     rv = cur.fetchall()
@@ -44,7 +46,8 @@ def init_db(app):
 
 def init_balances_db(app):
     with app.app_context():
-        db = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+        db = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
+        db.execute('pragma journal_mode=wal;')
         with app.open_resource('trc20balances.sql', mode='r') as f:
             db.cursor().executescript(f.read())
         db.commit()
@@ -56,7 +59,8 @@ def init_app(app):
 
 def save_event(txid, event):
     try:
-        db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+        db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
+        db.execute('pragma journal_mode=wal;')
         db.execute(
             "INSERT INTO events (txid, created_at, event) VALUES (?, ?, ?)",
             (txid, datetime.datetime.now(), event),
