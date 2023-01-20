@@ -86,7 +86,7 @@ def post_payout_results(data, symbol):
 
 @celery.task()
 def refresh_trc20_balances(symbol):
-    con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+    con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
     with con:
         cur = con.cursor()
         cur.execute('PRAGMA journal_mode=wal')

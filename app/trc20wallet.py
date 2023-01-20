@@ -76,7 +76,8 @@ class Trc20Wallet:
             retries = 0
             while retries < config['CONCURRENT_MAX_RETRIES']:
                 try:
-                    con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+                    con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
+                    con.execute('pragma journal_mode=wal')
                     con.row_factory = sqlite3.Row
                     cur = con.cursor()
                     tokens_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, self.symbol)).fetchone()
