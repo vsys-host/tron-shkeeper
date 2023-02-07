@@ -24,8 +24,9 @@ config = {
     'SHKEEPER_KEY': os.environ.get('SHKEEPER_BACKEND_KEY', 'shkeeper'),
     'SHKEEPER_HOST': os.environ.get('SHKEEPER_HOST', 'localhost:5000'),
 
-    'TX_FEE': Decimal(os.environ.get('TX_FEE', 15)),  # includes bandwidth, energy and activation fees
-    'TX_FEE_LIMIT': Decimal(os.environ.get('TX_FEE_LIMIT', 20)),  # max TRX tx can burn for resources (energy, bandwidth)
+    'TX_FEE': Decimal(os.environ.get('TX_FEE', 40)),  # includes bandwidth, energy and activation fees
+    'TX_FEE_LIMIT': Decimal(os.environ.get('TX_FEE_LIMIT', 50)),  # max TRX tx can burn for resources (energy, bandwidth)
+
 
     'TOKENS': {
         'main': {
