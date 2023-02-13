@@ -1,17 +1,17 @@
 import json
 from decimal import Decimal
+import time
 
 import tronpy.exceptions
 from flask import current_app, g
 from tronpy import Tron
 from tronpy.providers import HTTPProvider
 
-from .. import events
-from ..config import get_contract_address
 from ..db import get_db, query_db
-from ..utils import get_confirmations, get_filter_config, get_tron_client, get_wallet_balance
+from ..utils import get_filter_config, get_tron_client, get_wallet_balance
 from ..logging import logger
 from ..trc20wallet import Trc20Wallet
+from ..block_scanner import BlockScanner
 from . import api
 
 
@@ -27,17 +27,14 @@ def generate_new_address():
         (g.symbol, addresses['base58check_address'], addresses['private_key']),
     )
     db.commit()
-
-    events.FILTER = get_filter_config()
-    logger.info(f'Filter was updated. Total accounts: {events.analyze_filter(events.FILTER)}')
-
     return {'status': 'success', 'base58check_address': addresses['base58check_address']}
 
 @api.post('/balance')
 def get_balance():
+    start = time.time()
     w = Trc20Wallet(g.symbol)
     balance = w.tokens
-    return {'status': 'success', 'balance': balance}
+    return {'status': 'success', 'balance': balance, 'query_time': time.time() - start, 'last_init_duration': w.last_refresh_duration, '111': '222'}
 
 @api.post('/status')
 def get_status():
@@ -47,32 +44,17 @@ def get_status():
 
 @api.post('/transaction/<txid>')
 def get_transaction(txid):
-
-    row = query_db('select * from events where txid = ?', (txid, ), one=True)
-    event_data = json.loads(row['event'])
-
-    rows = query_db('select public from keys where symbol = ?', (g.symbol, ))
-    addrs = [row['public'] for row in rows]
-
-    if event_data['topicMap']['to'] in addrs:
-            category = 'receive'
-            addr = event_data['topicMap']['to']
-
-    elif event_data['topicMap']['from'] in addrs:
-            category = 'send'
-            addr = event_data['topicMap']['from']
-
-    else:
-        return {'status': 'error', 'msg': 'txid is not related to any known address'}
-
-    client = get_tron_client()
-    contract_address = get_contract_address(g.symbol)
-    contract = client.get_contract(contract_address)
-    precision = contract.functions.decimals()
-    amount = Decimal(event_data['dataMap']['value']) / 10 ** precision
-    confirmations = get_confirmations(txid)
-
-    return {'address': addr, 'amount': amount, 'confirmations': confirmations, 'category': category}
+    tron_client = get_tron_client()
+    tx = tron_client.get_transaction(txid)
+    info = BlockScanner.get_tx_info(tx)
+    try:
+        latest_block_number = tron_client.get_latest_block_number()
+        tx_block_number = tron_client.get_transaction_info(txid)['blockNumber']
+        confirmations = latest_block_number - tx_block_number or 1
+    except tronpy.exceptions.TransactionNotFound:
+        logger.warning(f"Can't get confirmations for {txid}")
+        confirmations = 1
+    return {'address': info.to_addr, 'amount': info.amount, 'confirmations': confirmations, 'category': 'receive'}
 
 @api.post('/dump')
 def dump():

@@ -1,8 +1,9 @@
 from celery import Celery
 from flask import Flask
 
-from . import events
 from .config import config
+from . import block_scanner
+
 
 celery = Celery(
     __name__,
@@ -30,9 +31,6 @@ def create_app():
     utils.init_wallet(app)
 
     app.url_map.converters['decimal'] = utils.DecimalConverter
-
-    with app.app_context():
-        events.FILTER = utils.get_filter_config()
 
     from .api import api as api_blueprint
     app.register_blueprint(api_blueprint)

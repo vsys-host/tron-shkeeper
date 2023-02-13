@@ -36,21 +36,6 @@ def get_symbol_by_addr(addr):
     with current_app.app_context():
         return query_db('select symbol from keys where public = ?', (addr), one=True)
 
-
-def get_confirmations(txid):
-    try:
-        full_node = get_tron_client()
-        latest_block_number = full_node.get_latest_block_number()
-        tx_info = full_node.get_transaction_info(txid)
-        confirmations = latest_block_number - tx_info['blockNumber']
-        logger.debug(f"confirmations: {confirmations} = latest_block_number: {latest_block_number} - tx_info['blockNumber'] {tx_info['blockNumber']}")
-
-    except tronpy.exceptions.TransactionNotFound:
-        logger.exception('Exception in get_confirmations():')
-        confirmations = 0
-
-    return confirmations
-
 def init_wallet(app):
     with app.app_context():
         main_key = query_db('select * from keys where type = "fee_deposit"', one=True)

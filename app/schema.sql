@@ -6,9 +6,8 @@ CREATE TABLE IF NOT EXISTS keys (
   type TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS events (
-  txid TEXT PRIMARY KEY,
-  created_at timestamp,
-  event TEXT
+CREATE TABLE IF NOT EXISTS settings (
+  `name` TEXT NOT NULL,
+  `value` TEXT,
+  UNIQUE(`name`)
 );
-

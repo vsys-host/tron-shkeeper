@@ -13,7 +13,6 @@ config = {
     'UPDATE_TOKEN_BALANCES_EVERY_SECONDS': int(os.environ.get('UPDATE_TOKEN_BALANCES_EVERY_SECONDS', 60)),
 
     'REDIS_HOST': os.environ.get('REDIS_HOST', 'localhost'),
-    'EVENT_SERVER_HOST': os.environ.get('EVENT_SERVER_HOST', 'events.tron.shkeeper.io'),
     'FULLNODE_URL': os.environ.get('FULLNODE_URL', 'http://fullnode.tron.shkeeper.io'),
     'SOLIDITYNODE_URL': os.environ.get('SOLIDITYNODE_URL', 'http://soliditynode.tron.shkeeper.io'),
     'TRON_NODE_USERNAME': os.environ.get('TRON_NODE_USERNAME', 'shkeeper'),
@@ -27,6 +26,11 @@ config = {
     'TX_FEE': Decimal(os.environ.get('TX_FEE', 40)),  # includes bandwidth, energy and activation fees
     'TX_FEE_LIMIT': Decimal(os.environ.get('TX_FEE_LIMIT', 50)),  # max TRX tx can burn for resources (energy, bandwidth)
 
+    # Block scanner
+    'BLOCK_SCANNER_STATS_LOG_PERIOD': int(os.environ.get('BLOCK_SCANNER_STATS_LOG_PERIOD', 5)),
+    'BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE': int(os.environ.get('BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE', 10)),
+    'BLOCK_SCANNER_INTERVAL_TIME': int(os.environ.get('BLOCK_SCANNER_INTERVAL_TIME', 3)),
+    'BLOCK_SCANNER_LAST_BLOCK_NUM_HINT': os.environ.get('BLOCK_SCANNER_LAST_BLOCK_NUM_HINT'),
 
     'TOKENS': {
         'main': {
@@ -35,12 +39,16 @@ config = {
         },
         'nile': {
             'USDT': {'contract_address': 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj'},
-            # USDC is not on Nile testnet, so use USDT contract instead
-            # good enough for testing purposes
-            'USDC': {'contract_address': 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj'},
         },
     },
 }
 
 def get_contract_address(symbol):
     return config['TOKENS'][config['TRON_NETWORK']][symbol]['contract_address']
+
+def get_symbol(contract_address):
+    cont_addr_to_symbol = {
+        config['TOKENS'][config['TRON_NETWORK']][symbol]['contract_address']: symbol
+            for symbol in config['TOKENS'][config['TRON_NETWORK']]
+    }
+    return cont_addr_to_symbol[contract_address]

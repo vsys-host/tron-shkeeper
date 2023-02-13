@@ -56,15 +56,3 @@ def init_app(app):
     app.teardown_appcontext(close_db)
     init_db(app)
     init_balances_db(app)
-
-def save_event(txid, event):
-    try:
-        db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
-        db.execute('pragma journal_mode=wal;')
-        db.execute(
-            "INSERT INTO events (txid, created_at, event) VALUES (?, ?, ?)",
-            (txid, datetime.datetime.now(), event),
-        )
-        db.commit()
-    except sqlite3.IntegrityError as e:
-        logger.info(f'Exception while saving event {txid}: {e}')
