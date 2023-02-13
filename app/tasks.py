@@ -86,6 +86,10 @@ def post_payout_results(data, symbol):
 
 @celery.task()
 def refresh_trc20_balances(symbol):
+
+    w = Trc20Wallet(symbol, init=False)
+    accs = w.refresh_accounts()
+
     con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
     con.execute('pragma journal_mode=wal')
     with con:
@@ -96,9 +100,8 @@ def refresh_trc20_balances(symbol):
             logger.error(f"{config['BALANCES_DATABASE']} error: {e}")
             return e
 
-        w = Trc20Wallet(symbol, init=False)
         updated = 0
-        for acc in w.refresh_accounts():
+        for acc in accs:
             try:
                 # tokens
                 if cur.execute("SELECT * FROM trc20balances WHERE account = ? and symbol = ?", (acc.addr, symbol)).fetchone():
@@ -148,5 +151,5 @@ def setup_periodic_tasks(sender, **kwargs):
     )
 
     # Update cached account balances
-    sender.add_periodic_task(config['UPDATE_TOKEN_BALANCES_EVERY_SECONDS'], refresh_trc20_balances.s('USDT'))
-    sender.add_periodic_task(config['UPDATE_TOKEN_BALANCES_EVERY_SECONDS'], refresh_trc20_balances.s('USDC'))
+    for symbol in config['TOKENS'][config['TRON_NETWORK']]:
+        sender.add_periodic_task(config['UPDATE_TOKEN_BALANCES_EVERY_SECONDS'], refresh_trc20_balances.s(symbol))
