@@ -27,6 +27,10 @@ def create_app():
     from . import db
     db.init_app(app)
 
+    block_scanner.BlockScanner.set_watched_accounts(
+        [row['public'] for row in db.query_db2('select public from keys where type = "onetime"')]
+    )
+
     from . import utils
     utils.init_wallet(app)
 

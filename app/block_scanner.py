@@ -20,6 +20,8 @@ from .exceptions import UnknownTransactionType, NotificationFailed
 
 class BlockScanner:
 
+    WATCHED_ACCOUNTS = []
+
     def __init__(self) -> None:
         self.tron_client = get_tron_client()
 
@@ -40,7 +42,10 @@ class BlockScanner:
                         time.sleep(config['BLOCK_SCANNER_INTERVAL_TIME'])
                         continue
 
+                    start_time = time.time()
                     results = list(executor.map(self.scan, blocks))
+                    logger.debug(f'Block chunk {blocks.start} - {blocks.stop - 1} processed for {time.time() - start_time} seconds')
+
                     if all(results):
                         logger.debug(f"Commiting chunk {blocks.start} - {blocks.stop - 1}")
                         self.set_last_seen_block_num(blocks.stop - 1)
@@ -53,12 +58,32 @@ class BlockScanner:
                     logger.warning(f"Waiting {sleep_sec} seconds before retry.")
                     time.sleep(sleep_sec)
 
+    @classmethod
+    def get_watched_accounts(cls) -> list:
+        return cls.WATCHED_ACCOUNTS
+
+    @classmethod
+    def set_watched_accounts(cls, acc_list: list):
+        cls.WATCHED_ACCOUNTS = acc_list
+        logger.debug(f'WATCHED_ACCOUNTS was set. List size: {cls.count_watched_accounts()}')
+
+    @classmethod
+    def add_watched_account(cls, acc: str):
+        cls.WATCHED_ACCOUNTS.append(acc)
+        logger.debug(f'Added {acc} to WATCHED_ACCOUNTS. List size: {cls.count_watched_accounts()}')
+
+    @classmethod
+    def count_watched_accounts(cls):
+        return len(cls.WATCHED_ACCOUNTS)
+
     def get_last_seen_block_num(self) -> int:
         row = query_db2('SELECT value FROM settings WHERE name = "last_seen_block_num"', one=True)
         return int(row['value']) if row['value'] else None
 
     def set_last_seen_block_num(self, block_num: int):
+        start_time = time.time()
         query_db2('UPDATE settings SET value = ? WHERE name = "last_seen_block_num"', (block_num,))
+        logger.debug(f'set_last_seen_block_num({block_num}) save time: {time.time() - start_time} seconds')
 
     def get_current_height(self):
         n = self.tron_client.get_latest_block_number()
@@ -75,8 +100,10 @@ class BlockScanner:
 
     @functools.lru_cache(maxsize=config['BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE'])
     def download_block(self, n):
-        logger.debug(f'Block {n}: DOWNLOAD')
-        return self.tron_client.get_block(n)
+        start_time = time.time()
+        block = self.tron_client.get_block(n)
+        logger.debug(f'Block {n} download took {time.time() - start_time} seconds')
+        return block
 
     def notify_shkeeper(self, symbol, txid):
         url = f'http://{config["SHKEEPER_HOST"]}/api/v1/walletnotify/{symbol}/{txid}'
@@ -93,8 +120,7 @@ class BlockScanner:
                 logger.debug(f"Block {block_num}: No transactions")
                 return True
 
-            valid_addresses = [row['public']
-                               for row in query_db2('select public from keys where type = "onetime"')]
+            valid_addresses = self.get_watched_accounts()
 
             txs = block['transactions']
             for tx in txs:
@@ -182,11 +208,12 @@ def block_scanner_stats(bs: BlockScanner):
             ss = (b_now - b_start) / config['BLOCK_SCANNER_STATS_LOG_PERIOD']
             b_start = b_now
             h = bs.get_current_height()
+            eta = 'n/a'
             if ss > 0:
                 eta = str(datetime.timedelta(seconds=int((h - b_now) / ss)))
             if abs(h -  b_now) <= 1:
                 eta = 'in sync'
-            logger.info(f"Stats: scan_bps={ss} | now_block={b_now} | head_block={h} | eta={eta}")
+            logger.info(f"Stats: scan_bps={ss} | now_block={b_now} | head_block={h} | eta={eta} | accs={bs.count_watched_accounts()}")
         except Exception as e:
             sleep_sec = 60
             logger.exception(f"Exteption in main scanner stats loop: {e}")

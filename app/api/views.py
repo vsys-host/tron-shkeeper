@@ -27,6 +27,9 @@ def generate_new_address():
         (g.symbol, addresses['base58check_address'], addresses['private_key']),
     )
     db.commit()
+
+    BlockScanner.add_watched_account(addresses['base58check_address'])
+
     return {'status': 'success', 'base58check_address': addresses['base58check_address']}
 
 @api.post('/balance')

@@ -1,5 +1,6 @@
 import datetime
 import sqlite3
+import time
 
 from flask import current_app, g
 
@@ -29,12 +30,14 @@ def query_db(query, args=(), one=False):
     return (rv[0] if rv else None) if one else rv
 
 def query_db2(query, args=(), one=False):
+    start_time = time.time()
     db = sqlite3.connect(config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
     db.execute('pragma journal_mode=wal;')
     db.row_factory = sqlite3.Row
     cur = db.execute(query, args)
     rv = cur.fetchall()
     cur.close()
+    logger.debug(f'query_db2({query}) took {time.time() - start_time} seconds')
     return (rv[0] if rv else None) if one else rv
 
 def init_db(app):
