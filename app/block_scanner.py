@@ -151,16 +151,21 @@ class BlockScanner:
             except KeyError:
                 raise UnknownTransactionType(f'Unknown contract address {cont_addr}')
 
-            func_selector = tx['raw_data']['contract'][0]['parameter']['value']['data'][:8]
+            raw_data = tx['raw_data']['contract'][0]['parameter']['value']['data']
+
+            func_selector = raw_data[:8]
             if func_selector != 'a9059cbb':  # erc20 transfer()
                 raise UnknownTransactionType(f'Unknown function selector: {func_selector}')
 
+            # Workaround for "Can't decode tx data: Padding bytes were not empty" errors
+            # https://github.com/ethereum/eth-abi/issues/162
+            raw_to_addr = bytes.fromhex('0' * 24 + raw_data[8+24:8+64])
+            raw_amount = bytes.fromhex(raw_data[8+64:])
+            decoded_amount = trx_abi.decode_single('uint256', raw_amount)
+
             from_addr = tx['raw_data']['contract'][0]['parameter']['value']['owner_address']
-            to_addr, raw_amount = trx_abi.decode_abi(
-                ['address', 'uint256'],
-                bytes.fromhex(tx['raw_data']['contract'][0]['parameter']['value']['data'][8:])
-            )
-            amount = Decimal(raw_amount) / Decimal(1e6)
+            to_addr = trx_abi.decode_single('address', raw_to_addr)
+            amount = Decimal(decoded_amount) / Decimal(1e6)
 
         else:
             raise UnknownTransactionType(f'Unknown transaction type: {txid}: {tx_type}')
