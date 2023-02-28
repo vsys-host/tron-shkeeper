@@ -2,6 +2,11 @@ import threading
 
 import app
 
+#
+# Flask
+#
+
+server = app.create_app()
 
 #
 # Block scanner
@@ -23,12 +28,3 @@ block_scanner_stats_thread = threading.Thread(
     args=(block_scanner,),
 )
 block_scanner_stats_thread.start()
-
-#
-# Flask
-#
-
-server = app.create_app()
-
-if __name__ == '__main__':
-    server.run(debug=app.config['DEBUG'], use_reloader=False, host="0.0.0.0", port=6000)
