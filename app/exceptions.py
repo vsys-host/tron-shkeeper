@@ -4,3 +4,6 @@ class UnknownTransactionType(Exception):
 
 class NotificationFailed(Exception):
     pass
+
+class BadContractResult(Exception):
+    pass

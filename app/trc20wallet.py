@@ -13,20 +13,7 @@ from tronpy.keys import PrivateKey
 from .config import config, get_contract_address
 from .db import query_db2
 from .logging import logger
-from .utils import get_tron_client
-
-
-@dataclass
-class Account:
-    addr: str  # public key
-    tokens: Decimal = 0
-    currency: Decimal = 0
-    bandwidth: int = 0
-    bandwidth_limit: int = 1500
-
-    @property
-    def private_key(self):
-        return query_db2('select * from keys where type = "onetime" and public = ?', (self.addr,), one=True)['private']
+from .utils import get_tron_client, Account
 
 
 class Trc20Wallet:
@@ -73,25 +60,6 @@ class Trc20Wallet:
     def init_accounts(self) -> List[Account]:
         public_keys = [row['public'] for row in query_db2('select public from keys where symbol = ? and type = "onetime"', (self.symbol, ))]
 
-
-        # def get(addr) -> Account:
-        #     retries = 0
-        #     while retries < config['CONCURRENT_MAX_RETRIES']:
-        #         try:
-        #             start = time.time()
-        #             tokens_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, self.symbol)).fetchone()
-        #             tokens = tokens_query['balance'] if tokens_query else Decimal(0)
-        #             currency_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_currency')).fetchone()
-        #             currency = currency_query['balance'] if currency_query else Decimal(0)
-        #             bandwidth_query = cur.execute("SELECT balance FROM trc20balances WHERE account = ? and symbol = ?", (addr, '_bandwidth')).fetchone()
-        #             bandwidth = bandwidth_query['balance'] if bandwidth_query else Decimal(0)
-        #             logger.warning(f'init_accounts, retry {retries} for {addr} elapsed {time.time() - start}')
-        #             return Account(addr=addr, tokens=tokens, currency=currency, bandwidth=bandwidth)
-        #         except Exception as e:
-        #             logger.exception(f'Exception during Account(addr="{addr}") initialization: {e}')
-        #             retries += 1
-        #     raise Exception(f'CONCURRENT_MAX_RETRIES exeeded during Account(addr="{addr}") initialization')
-
         con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
         con.execute('pragma journal_mode=wal')
         con.row_factory = sqlite3.Row
@@ -107,11 +75,7 @@ class Trc20Wallet:
             if key not in public_keys:
                 continue
             accounts.append(Account(addr=key, tokens=bigdict[key][self.symbol], currency=bigdict[key]['_currency'], bandwidth=bigdict[key]['_bandwidth']))
-            # print(f"Account(addr={key}, tokens={bigdict[key][symbol]}, currency={bigdict[key]['_currency']}, bandwidth={bigdict[key]['_bandwidth']}")
 
-        # with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
-        #     accounts = list(executor.map(get, public_keys))
-        # accounts = [get(pk) for pk in public_keys]
         accounts.sort(key=lambda account: account.tokens, reverse=True)
         return accounts
 

@@ -32,7 +32,9 @@ class Wallet:
         if symbol != 'TRX':
             self.contract_address = get_contract_address(symbol)
 
-    def create_contract(self, contract_address):
+    def get_contract(self, contract_address=None):
+        if contract_address is None:
+            contract_address = self.contract_address
         contract = self.CACHE['contracts'].get(contract_address)
         if not contract:
             contract = self.client.get_contract(contract_address)
@@ -48,26 +50,25 @@ class Wallet:
             except tronpy.exceptions.AddressNotFound:
                 return Decimal(0)
         else:
-            return Decimal(self.create_contract(self.contract_address).functions.balanceOf(self.main_account['public'])) \
+            return Decimal(self.get_contract().functions.balanceOf(self.main_account['public'])) \
                    / 10 ** self.CACHE['decimals'][self.contract_address]
 
     def transfer(self, dst, amount):
+
         if self.symbol == 'TRX':
             txn = self.client.trx.transfer(self.main_account['public'], dst, int(amount * 1_000_000))
-            txn._raw_data['expiration'] += 60_000
-            txn = txn.build()
-            txn = txn.sign(PrivateKey(bytes.fromhex(self.main_account['private'])))
-            txn_res = txn.broadcast().wait()
-            logger.info(f"{amount} TRX has been sent to {dst} with TXID {txn.txid}. Details: {txn_res}")
         else:
-            txn = self.create_contract(self.contract_address).functions.transfer(dst, int(amount * 1_000_000))
-            txn = txn.with_owner(self.main_account['public'])
-            txn = txn.fee_limit(int(config['TX_FEE_LIMIT'] * 1_000_000))
-            txn._raw_data['expiration'] += 60_000
-            txn = txn.build()
-            txn = txn.sign(PrivateKey(bytes.fromhex(self.main_account['private'])))
-            txn_res = txn.broadcast().wait()
-            logger.info(f"{amount} {self.symbol} has been sent to {dst} with {txn.txid}. Details: {txn_res}")
+            txn = (self.get_contract().functions.transfer(dst, int(amount * 1_000_000))
+                                                .with_owner(self.main_account['public'])
+                                                .fee_limit(int(config['TX_FEE_LIMIT'] * 1_000_000)))
+
+        txn._raw_data['expiration'] += 60_000
+        txn = (txn.build()
+                  .sign(PrivateKey(bytes.fromhex(self.main_account['private']))))
+        txn_res = (txn.broadcast()
+                      .wait())
+
+        logger.info(f"{amount} {self.symbol} has been sent to {dst} with TXID {txn.txid}. Details: {txn_res}")
 
         result = {
             "dest": dst,
@@ -75,7 +76,6 @@ class Wallet:
             "txids": [txn.txid],
             "details": txn_res,
         }
-
 
         if self.symbol == 'TRX':
             if txn_res['contractResult'] == ['']:

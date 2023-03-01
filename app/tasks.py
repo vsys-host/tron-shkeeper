@@ -7,69 +7,105 @@ import time
 from celery.schedules import crontab
 from celery.utils.log import get_task_logger
 from tronpy.keys import PrivateKey
+from tronpy.tron import current_timestamp
 import requests
 
 from . import celery
 from .config import config, get_contract_address
+from .db import query_db2
+from .wallet import Wallet
 from .trc20wallet import PayoutStrategy, Trc20Wallet
-from .utils import (get_non_empty_accounts, get_tron_client, transfer_to_fee_deposit)
+from .utils import get_non_empty_accounts, get_tron_client, transfer_to_fee_deposit, Account, skip_if_running
 
 logger = get_task_logger(__name__)
+logger.propagate = False
 
 @celery.task()
 def prepare_payout(dest, amount, symbol):
-    logger.info(f"Preparing payout for {amount} {symbol} -> {dest}")
-    amount = decimal.Decimal(amount)
-    ps = PayoutStrategy(Trc20Wallet(symbol), [{'dest': dest, 'amount': amount}])
-    steps = ps.generate_steps()
-    seed_results = ps.seed_payout_fees()
+    steps = []
+    steps.append({
+            'dst': dest,
+            'amount': decimal.Decimal(amount),
+    })
     return steps
 
 @celery.task()
 def prepare_multipayout(payout_list, symbol):
-    wallet = Trc20Wallet(symbol)
-    ps = PayoutStrategy(wallet, payout_list)
     logger.info(f"Preparing payout for {sum([t['amount'] for t in payout_list])} "
                 f"{symbol} to {len(payout_list)} destinations.")
-    steps = ps.generate_steps()
-    seed_results = ps.seed_payout_fees()
+    steps = []
+    for payout in payout_list:
+        steps.append({
+            'dst': payout['dest'],
+            'amount': decimal.Decimal(payout['amount']),
+        })
     return steps
 
 @celery.task()
 def payout(steps, symbol):
-
-    client = get_tron_client()
-    contract_address = get_contract_address(symbol)
-    contract = client.get_contract(contract_address)
-
-    def transfer(spec):
-        try:
-            txn = (
-                contract.functions.transfer(spec['dst'], int(spec['amount'] * 1_000_000))
-                .with_owner(spec['src'].addr)
-                .fee_limit(int(config['TX_FEE_LIMIT'] * 1_000_000))
-                .build()
-                .sign(PrivateKey(bytes.fromhex(spec['src'].private_key)))
-            )
-            txn.broadcast().wait()
-            logger.info(f"Transfer {spec['amount']} {symbol} {spec['src'].addr} -> {spec['dst']} | {txn.txid}")
-            return txn.txid
-
-        except Exception as e:
-            logger.exception(f"Error during transfer {spec['amount']} {symbol} {spec['src'].addr} -> {spec['dst']}: {e}")
-
-    payout_results = []
-    for step in steps:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
-            txids = list(executor.map(transfer, step))
-            payout_results.append({
-                "dest": step[0]['dst'],
-                "amount": str(sum([t['amount'] for t in step])),
-                "status": "success",
-                "txids": txids,
-            })
+    wallet = Wallet(symbol)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
+        payout_results = list(executor.map(lambda x: wallet.transfer(x['dst'], x['amount']), steps))
     post_payout_results.delay(payout_results, symbol)
     return payout_results
+
+@celery.task()
+def transfer_trc20_tokens_to_main_account(onetime_publ_key, symbol):
+
+    tron_client = get_tron_client()
+
+    contract_address = get_contract_address(symbol)
+    contract = tron_client.get_contract(contract_address)
+    precision = contract.functions.decimals()
+    token_balance = contract.functions.balanceOf(onetime_publ_key)
+
+    if token_balance <= 0:
+        logger.error(f"Skipping transfer: account {onetime_publ_key} has 0 {symbol}")
+        return
+
+    main_acc_keys = query_db2('select * from keys where type = "fee_deposit" ', one=True)
+    main_priv_key = PrivateKey(bytes.fromhex(main_acc_keys['private']))
+    main_publ_key = main_acc_keys['public']
+
+    main_acc_balance = tron_client.get_account_balance(main_publ_key)
+
+    if main_acc_balance < config['TX_FEE']:
+        raise Exception(f"Main account hasn't enought currency: balance: {main_acc_balance} need: {config['TX_FEE']}")
+
+    tx_trx = tron_client.trx.transfer(main_publ_key, onetime_publ_key, int(config['TX_FEE'] * 1_000_000))
+    tx_trx._raw_data['expiration'] = current_timestamp() + 60_000
+    tx_trx = tx_trx.build()
+    tx_trx = tx_trx.sign(main_priv_key)
+    tx_trx_res = tx_trx.broadcast().wait()
+    logger.info(f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}")
+
+    onetime_priv_key = PrivateKey(bytes.fromhex(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private']))
+
+    tx_token = contract.functions.transfer(main_publ_key, int(token_balance))
+    tx_token = tx_token.with_owner(onetime_publ_key)
+    tx_token = tx_token.fee_limit(int(config['TX_FEE_LIMIT'] * 1_000_000))
+    tx_token._raw_data['expiration'] = current_timestamp() + 60_000
+    tx_token = tx_token.build()
+    tx_token = tx_token.sign(onetime_priv_key)
+    tx_token_res = tx_token.broadcast().wait()
+    logger.info(f"{token_balance / 10**precision} {symbol} sent to {onetime_publ_key} with {tx_token.txid}. Details: {tx_token_res}")
+
+    return {'tx_trx_res': tx_trx_res, 'tx_token': tx_token_res}
+
+@celery.task()
+def transfer_trx_to_main_account(onetime_publ_key):
+    tron_client = get_tron_client()
+    onetime_priv_key = PrivateKey(bytes.fromhex(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private']))
+    main_publ_key = query_db2('select * from keys where type = "fee_deposit" ', one=True)['public']
+    onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
+
+    tx_trx = tron_client.trx.transfer(onetime_publ_key, main_publ_key, int(onetime_acc_balance))
+    tx_trx._raw_data['expiration'] = current_timestamp() + 60_000
+    tx_trx = tx_trx.build()
+    tx_trx = tx_trx.sign(onetime_priv_key)
+    tx_trx_res = tx_trx.broadcast().wait()
+    logger.info(f"{onetime_acc_balance / 1_000_000} TRX sent to main account ({main_publ_key}) with TXID {tx_trx.txid}. Details: {tx_trx_res}")
+    return {'tx_trx_res': tx_trx_res}
 
 @celery.task()
 def post_payout_results(data, symbol):
@@ -84,8 +120,9 @@ def post_payout_results(data, symbol):
             logger.warning(f'Shkeeper payout notification failed: {e}')
             time.sleep(10)
 
-@celery.task()
-def refresh_trc20_balances(symbol):
+@celery.task(bind=True)
+@skip_if_running
+def refresh_trc20_balances(self, symbol):
 
     w = Trc20Wallet(symbol, init=False)
     accs = w.refresh_accounts()
@@ -111,6 +148,9 @@ def refresh_trc20_balances(symbol):
                     cur.execute("INSERT INTO trc20balances VALUES (?, ?, ?, ?)",
                                 (acc.addr, symbol, acc.tokens, datetime.datetime.now()))
 
+                if acc.tokens > 0:
+                    transfer_trc20_tokens_to_main_account.delay(acc.addr, symbol)
+
                 # currency
                 if cur.execute("SELECT * FROM trc20balances WHERE account = ? and symbol = ?", (acc.addr, '_currency')).fetchone():
                     cur.execute("UPDATE trc20balances SET balance = ?, updated_at = ? WHERE account = ? AND symbol = ?",
@@ -133,8 +173,8 @@ def refresh_trc20_balances(symbol):
     con.close()
     return updated
 
-@celery.task()
-def transfer_unused_fee():
+@celery.task(bind=True)
+def transfer_unused_fee(self):
     # We don't need to check if accounts have a free bandwidth units
     # because tx will raise tronpy.exceptions.ValidationError
     # if there is not enough TRX to burn for bandwidth.

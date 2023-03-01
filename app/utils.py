@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from functools import wraps
 import logging
 from decimal import Decimal
 import time
@@ -9,12 +11,26 @@ from flask import current_app
 from tronpy import Tron
 from tronpy.keys import PrivateKey
 from tronpy.providers import HTTPProvider
+from tronpy.abi import trx_abi
 from werkzeug.routing import BaseConverter
 import requests
 
 from .config import config, get_contract_address
-from .db import get_db, query_db
+from .db import get_db, query_db, query_db2
 from .logging import logger
+
+
+@dataclass
+class Account:
+    addr: str  # public key
+    tokens: Decimal = 0
+    currency: Decimal = 0
+    bandwidth: int = 0
+    bandwidth_limit: int = 1500
+
+    @property
+    def private_key(self):
+        return query_db2('select * from keys where public = ?', (self.addr,), one=True)['private']
 
 
 class DecimalConverter(BaseConverter):
@@ -161,3 +177,37 @@ def get_wallet_balance(symbol) -> Decimal:
     with concurrent.futures.ThreadPoolExecutor(max_workers=config['CONCURRENT_MAX_WORKERS']) as executor:
         balance = sum(executor.map(lambda acc: Decimal(contract.functions.balanceOf(acc)), accounts)) / 10 ** precision
     return balance
+
+def estimateenergy(src, dst, amount, symbol):
+    tron_client = get_tron_client()
+
+    parameter = trx_abi.encode_single("(address,uint256)", [dst, int(amount * 1_000_000)]).hex()
+    data = {
+        "owner_address": src,
+        "contract_address": get_contract_address(symbol),
+        "function_selector": "transfer(address,uint256)",
+        "parameter": parameter,
+        "visible": True
+    }
+    return tron_client.provider.make_request('/wallet/estimateenergy', params=data)
+
+def skip_if_running(f):
+    task_name = f'{f.__module__}.{f.__name__}'
+
+    @wraps(f)
+    def wrapped(self, *args, **kwargs):
+        workers = self.app.control.inspect().active()
+
+        for worker, tasks in workers.items():
+            for task in tasks:
+                if (task_name == task['name'] and
+                        tuple(args) == tuple(task['args']) and
+                        kwargs == task['kwargs'] and
+                        self.request.id != task['id']):
+                    logger.debug(f'task {task_name} ({args}, {kwargs}) is running on {worker}, skipping')
+
+                    return None
+        logger.debug(f'task {task_name} ({args}, {kwargs}) is allowed to run')
+        return f(self, *args, **kwargs)
+
+    return wrapped

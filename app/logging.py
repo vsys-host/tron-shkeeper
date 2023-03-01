@@ -11,3 +11,4 @@ ch = logging.StreamHandler()
 formatter = logging.Formatter('[%(asctime)s] %(levelname)s <%(threadName)s Thread>: %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
+logger.propagate = False

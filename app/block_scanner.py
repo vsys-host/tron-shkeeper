@@ -1,4 +1,5 @@
 from collections import namedtuple
+from dataclasses import dataclass
 import datetime
 from decimal import Decimal
 import functools
@@ -15,7 +16,7 @@ from .config import config, get_symbol
 from .db import query_db2
 from .logging import logger
 from .utils import get_tron_client
-from .exceptions import UnknownTransactionType, NotificationFailed
+from .exceptions import UnknownTransactionType, NotificationFailed, BadContractResult
 
 
 class BlockScanner:
@@ -25,14 +26,11 @@ class BlockScanner:
     def __init__(self) -> None:
         self.tron_client = get_tron_client()
 
-        if self.get_last_seen_block_num() is None:
-            if config['BLOCK_SCANNER_LAST_BLOCK_NUM_HINT']:
-                last_block_num = int(config['BLOCK_SCANNER_LAST_BLOCK_NUM_HINT'])
-            else:
-                last_block_num = self.get_current_height()
-            query_db2('INSERT INTO settings VALUES ("last_seen_block_num", ?)', (last_block_num,))
-
     def __call__(self):
+        num = self.get_last_seen_block_num()
+        logger.info(f'Last seen block number is {num}')
+        logger.info(f'Concurrency is set to {config["BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE"]}')
+
         with ThreadPoolExecutor(max_workers=config['BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE']) as executor:
             while True:
                 try:
@@ -76,9 +74,23 @@ class BlockScanner:
     def count_watched_accounts(cls):
         return len(cls.WATCHED_ACCOUNTS)
 
+    @functools.cached_property
+    def main_account(self):
+        return query_db2('select * from keys where type = "fee_deposit" ', one=True)['public']
+
     def get_last_seen_block_num(self) -> int:
         row = query_db2('SELECT value FROM settings WHERE name = "last_seen_block_num"', one=True)
-        return int(row['value']) if row['value'] else None
+        if row:
+            last_block_num = int(row['value'])
+        else:
+            if config['BLOCK_SCANNER_LAST_BLOCK_NUM_HINT']:
+                last_block_num = int(config['BLOCK_SCANNER_LAST_BLOCK_NUM_HINT'])
+                logger.info(f'Last seen block is hinted to be {last_block_num}')
+            else:
+                last_block_num = self.get_current_height()
+                logger.info(f'Last seen block is set to full node height {last_block_num}')
+            query_db2('INSERT INTO settings VALUES ("last_seen_block_num", ?)', (last_block_num,))
+        return last_block_num
 
     def set_last_seen_block_num(self, block_num: int):
         start_time = time.time()
@@ -114,6 +126,8 @@ class BlockScanner:
             raise NotificationFailed(res)
 
     def scan(self, block_num: int) -> bool:
+        from .tasks import transfer_trc20_tokens_to_main_account, transfer_trx_to_main_account
+
         try:
             block = self.download_block(block_num)
             if not 'transactions' in block:
@@ -128,11 +142,7 @@ class BlockScanner:
                     info = self.get_tx_info(tx)
                     logger.debug(f"Block {block_num}: Found transaction {info.txid}")
 
-                except InsufficientDataBytes as e:
-                    logger.debug(f"Can't get info from tx: {e}: {tx}")
-                    continue
-
-                except UnknownTransactionType as e:
+                except (UnknownTransactionType, InsufficientDataBytes, BadContractResult) as e:
                     logger.debug(f"Can't get info from tx: {e}: {tx}")
                     continue
 
@@ -144,10 +154,22 @@ class BlockScanner:
                     logger.warning(f"Block {block_num}: Transaction info extraction error: {e}: {tx}")
                     raise e
 
+                if info.symbol == 'TRX' and info.from_addr == self.main_account \
+                                        and info.to_addr in valid_addresses:
+                    logger.info(f"Ignoring TRX transaction from main to onetime acc: {info}")
+                    continue
+
                 if info.to_addr in valid_addresses:
                     if info.status == 'SUCCESS':
                         logger.info(f"Sending notification for {info}")
+
                         self.notify_shkeeper(info.symbol, info.txid)
+
+                        # Send funds to main account
+                        if info.is_trc20:
+                            transfer_trc20_tokens_to_main_account.delay(info.to_addr, info.symbol)
+                        else:
+                            transfer_trx_to_main_account.delay(info.to_addr)
                     else:
                         logger.warning(f"Not sending notification for tx with status {info.status}: {info}")
 
@@ -158,19 +180,23 @@ class BlockScanner:
         return True
 
     @staticmethod
-    def get_tx_info(tx: dict) -> Tuple[str, str, str, str, Decimal]:
-
+    def get_tx_info(tx: dict) -> 'TxInfo':
+        is_trc20 = False
         txid = tx['txID']
         tx_type = tx['raw_data']['contract'][0]['type']
         status = tx['ret'][0]['contractRet']
+
+        if status == 'REVERT':
+            raise BadContractResult(f'TXID {txid} has result {status}')
 
         if tx_type == 'TransferContract':
             symbol = 'TRX'
             from_addr = tx['raw_data']['contract'][0]['parameter']['value']['owner_address']
             to_addr = tx['raw_data']['contract'][0]['parameter']['value']['to_address']
-            amount = Decimal(tx['raw_data']['contract'][0]['parameter']['value']['amount']) / Decimal(1e9)
+            amount = Decimal(tx['raw_data']['contract'][0]['parameter']['value']['amount']) / Decimal(1_000_000)
 
         elif tx_type == 'TriggerSmartContract':
+            is_trc20 = True
             cont_addr = tx['raw_data']['contract'][0]['parameter']['value']['contract_address']
             try:
                 symbol = get_symbol(cont_addr)
@@ -196,10 +222,14 @@ class BlockScanner:
         else:
             raise UnknownTransactionType(f'Unknown transaction type: {txid}: {tx_type}')
 
-        return TxInfo(status, txid, symbol, from_addr, to_addr, amount)
+        return TxInfo(status, txid, symbol, from_addr, to_addr, amount, is_trc20)
 
 
 def block_scanner_stats(bs: BlockScanner):
+
+    # waiting for block scanner thread to update settings table
+    time.sleep(config['BLOCK_SCANNER_STATS_LOG_PERIOD'])
+
     b_start = bs.get_last_seen_block_num()
     while True:
         try:
@@ -220,4 +250,14 @@ def block_scanner_stats(bs: BlockScanner):
             logger.warning(f"Waiting {sleep_sec} seconds before retry.")
             time.sleep(sleep_sec)
 
-TxInfo = namedtuple('TxInfo', 'status, txid, symbol, from_addr, to_addr, amount')
+# TxInfo = namedtuple('TxInfo', 'status, txid, symbol, from_addr, to_addr, amount, is_trc20')
+
+@dataclass
+class TxInfo:
+    status: str
+    txid: str
+    symbol: str
+    from_addr: str
+    to_addr: str
+    amount: Decimal
+    is_trc20: bool
