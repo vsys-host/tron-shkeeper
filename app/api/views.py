@@ -8,9 +8,10 @@ from tronpy import Tron
 from tronpy.providers import HTTPProvider
 
 from ..db import get_db, query_db
-from ..utils import get_filter_config, get_tron_client, get_wallet_balance
+from ..utils import get_filter_config, get_tron_client, get_wallet_balance, estimateenergy
 from ..logging import logger
 from ..trc20wallet import Trc20Wallet
+from ..wallet import Wallet
 from ..block_scanner import BlockScanner
 from . import api
 
@@ -35,9 +36,10 @@ def generate_new_address():
 @api.post('/balance')
 def get_balance():
     start = time.time()
-    w = Trc20Wallet(g.symbol)
-    balance = w.tokens
-    return {'status': 'success', 'balance': balance, 'query_time': time.time() - start, 'last_init_duration': w.last_refresh_duration, '111': '222'}
+
+    w = Wallet(g.symbol)
+    balance = w.balance
+    return {'status': 'success', 'balance': balance, 'query_time': time.time() - start,}
 
 @api.post('/status')
 def get_status():
@@ -74,3 +76,9 @@ def get_fee_deposit_account():
     except tronpy.exceptions.AddressNotFound:
         balance = Decimal(0)
     return {'account': key['public'], 'balance': balance}
+
+@api.post('/estimate-energy/<src>/<dst>/<decimal:amount>')
+def estimate_energy(src, dst, amount):
+    res = estimateenergy(src, dst, amount, g.symbol)
+    logger.warning(f"estimateenergy result: {res}")
+    return res

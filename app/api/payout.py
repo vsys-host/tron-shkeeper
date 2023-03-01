@@ -4,22 +4,22 @@ from flask import g, request
 from flask import current_app as app
 import tronpy
 
+
 from .. import celery
+from ..config import config
 from ..tasks import payout as payout_task
 from ..tasks import prepare_payout, prepare_multipayout
 from ..tasks import transfer_unused_fee
 from ..utils import get_non_empty_accounts
 from . import api
+from ..wallet import Wallet
 from ..trc20wallet import PayoutStrategy, Trc20Wallet
 from ..logging import logger
 
 
 @api.post('/calc-tx-fee/<decimal:amount>')
 def calc_tx_fee(amount):
-    w = Trc20Wallet(g.symbol)
-    payout_list = [{'dest': 'calc-tx-fee', 'amount': amount}]
-    ps = PayoutStrategy(w, payout_list)
-    return ps.estimate_fee()
+    return {'fee': config['TX_FEE']}
 
 @api.post('/multipayout')
 def multipayout():
@@ -44,29 +44,29 @@ def multipayout():
         if transfer['amount'] <= 0:
             raise Exception(f"Payout amount should be a positive number: {transfer}")
 
-    wallet = Trc20Wallet(g.symbol)
-
+    wallet = Wallet(g.symbol)
+    balance = wallet.balance
     need_tokens = sum([transfer['amount'] for transfer in payout_list])
-    if wallet.tokens < need_tokens:
-        raise Exception(f"Not enough {g.symbol} tokens to make all payouts. Has: {wallet.tokens}, need: {need_tokens}")
+    if balance < need_tokens:
+        pass
+        #raise Exception(f"Not enough {g.symbol} tokens to make all payouts. Has: {balance}, need: {need_tokens}")
 
-    ps = PayoutStrategy(wallet, payout_list)
-    need_currency = ps.estimate_fee()['fee']
-    if wallet.fee_deposit_account.currency < need_currency:
-        raise Exception(f"Not enough TRX tokens at fee-deposit account {wallet.fee_deposit_account.addr} to pay for payout fees. "
-                        f"Has: {wallet.fee_deposit_account.currency}, need: {need_currency}")
+    need_currency = len(payout_list) *  config['TX_FEE']
+    trx_balance = Wallet().balance
+    if trx_balance < need_currency:
+        raise Exception(f"Not enough TRX tokens at fee-deposit account {wallet.main_account} to pay payout fees. "
+                        f"Has: {trx_balance}, need: {need_currency}")
 
     if 'dryrun' in request.args:
         return {
             'currency': {
                 'need': need_currency,
-                'have': wallet.fee_deposit_account.currency,
+                'have': trx_balance,
             },
             'tokens': {
                 'need': need_tokens,
-                'have': wallet.tokens,
+                'have': balance,
             },
-            'steps': ps.steps,
         }
 
     task = ( prepare_multipayout.s(payout_list, g.symbol) | payout_task.s(g.symbol) ).apply_async()
