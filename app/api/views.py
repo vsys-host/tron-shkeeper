@@ -43,8 +43,9 @@ def get_balance():
 
 @api.post('/status')
 def get_status():
-    client = get_tron_client()
-    block =  client.get_latest_block()
+    bs = BlockScanner()
+    last_seen_block_num = bs.get_last_seen_block_num()
+    block =  bs.tron_client.get_block(last_seen_block_num)
     return {'status': 'success', 'last_block_timestamp': block['block_header']['raw_data']['timestamp'] // 1000}
 
 @api.post('/transaction/<txid>')
