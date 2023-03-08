@@ -39,6 +39,8 @@ class Wallet:
         if not contract:
             contract = self.client.get_contract(contract_address)
             self.CACHE['contracts'][contract_address] = contract
+        decimals = self.CACHE['decimals'].get(contract_address)
+        if not decimals:
             self.CACHE['decimals'][contract_address] = contract.functions.decimals()
         return contract
 
