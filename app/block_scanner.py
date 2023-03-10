@@ -186,7 +186,7 @@ class BlockScanner:
         tx_type = tx['raw_data']['contract'][0]['type']
         status = tx['ret'][0]['contractRet']
 
-        if status == 'REVERT':
+        if status != 'SUCCESS':
             raise BadContractResult(f'TXID {txid} has result {status}')
 
         if tx_type == 'TransferContract':
