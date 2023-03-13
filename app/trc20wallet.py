@@ -58,7 +58,7 @@ class Trc20Wallet:
             return accounts
 
     def init_accounts(self) -> List[Account]:
-        public_keys = [row['public'] for row in query_db2('select public from keys where symbol = ? and type = "onetime"', (self.symbol, ))]
+        public_keys = {row['public'] for row in query_db2('select public from keys where symbol = ? and type = "onetime"', (self.symbol, ))}
 
         con = sqlite3.connect(config["BALANCES_DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
         con.execute('pragma journal_mode=wal')
