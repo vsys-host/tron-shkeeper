@@ -5,7 +5,7 @@ from decimal import Decimal
 import functools
 import time
 from typing import Tuple
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 import requests
 
@@ -21,7 +21,7 @@ from .exceptions import UnknownTransactionType, NotificationFailed, BadContractR
 
 class BlockScanner:
 
-    WATCHED_ACCOUNTS = []
+    WATCHED_ACCOUNTS = set()
 
     def __init__(self) -> None:
         self.tron_client = get_tron_client()
@@ -62,12 +62,12 @@ class BlockScanner:
 
     @classmethod
     def set_watched_accounts(cls, acc_list: list):
-        cls.WATCHED_ACCOUNTS = acc_list
+        cls.WATCHED_ACCOUNTS = set(acc_list)
         logger.debug(f'WATCHED_ACCOUNTS was set. List size: {cls.count_watched_accounts()}')
 
     @classmethod
     def add_watched_account(cls, acc: str):
-        cls.WATCHED_ACCOUNTS.append(acc)
+        cls.WATCHED_ACCOUNTS.add(acc)
         logger.debug(f'Added {acc} to WATCHED_ACCOUNTS. List size: {cls.count_watched_accounts()}')
 
     @classmethod
@@ -133,7 +133,7 @@ class BlockScanner:
             if not 'transactions' in block:
                 logger.debug(f"Block {block_num}: No transactions")
                 return True
-
+            start = time.time()
             valid_addresses = self.get_watched_accounts()
 
             txs = block['transactions']
@@ -172,7 +172,7 @@ class BlockScanner:
                             transfer_trx_to_main_account.delay(info.to_addr)
                     else:
                         logger.warning(f"Not sending notification for tx with status {info.status}: {info}")
-
+            logger.debug(f"block {block_num} info extraction time: {time.time() - start}")
         except Exception as e:
             logger.exception(f'Block {block_num}: Failed to scan: {e}')
             return False
