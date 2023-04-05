@@ -15,16 +15,13 @@ from eth_abi.exceptions import NonEmptyPaddingBytes, InsufficientDataBytes
 from .config import config, get_symbol
 from .db import query_db2
 from .logging import logger
-from .utils import get_tron_client
 from .exceptions import UnknownTransactionType, NotificationFailed, BadContractResult
+from .connection_manager import ConnectionManager
 
 
 class BlockScanner:
 
     WATCHED_ACCOUNTS = set()
-
-    def __init__(self) -> None:
-        self.tron_client = get_tron_client()
 
     def __call__(self):
         num = self.get_last_seen_block_num()
@@ -98,7 +95,7 @@ class BlockScanner:
         logger.debug(f'set_last_seen_block_num({block_num}) save time: {time.time() - start_time} seconds')
 
     def get_current_height(self):
-        n = self.tron_client.get_latest_block_number()
+        n = ConnectionManager.client().get_latest_block_number()
         logger.debug(f'Block height is {n}')
         return n
 
@@ -113,7 +110,7 @@ class BlockScanner:
     @functools.lru_cache(maxsize=config['BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE'])
     def download_block(self, n):
         start_time = time.time()
-        block = self.tron_client.get_block(n)
+        block = ConnectionManager.client().get_block(n)
         logger.debug(f'Block {n} download took {time.time() - start_time} seconds')
         return block
 

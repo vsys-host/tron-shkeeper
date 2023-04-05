@@ -3,6 +3,7 @@ from flask import Flask
 
 from .config import config
 from . import block_scanner
+from . import connection_manager
 
 
 celery = Celery(

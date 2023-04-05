@@ -1,18 +1,19 @@
 import json
 from decimal import Decimal
 import time
+import requests
 
 import tronpy.exceptions
 from flask import current_app, g
 from tronpy import Tron
-from tronpy.providers import HTTPProvider
 
 from ..db import get_db, query_db
-from ..utils import get_filter_config, get_tron_client, get_wallet_balance, estimateenergy
+from ..utils import estimateenergy
 from ..logging import logger
 from ..trc20wallet import Trc20Wallet
 from ..wallet import Wallet
 from ..block_scanner import BlockScanner
+from ..connection_manager import ConnectionManager
 from . import api
 
 
@@ -45,12 +46,12 @@ def get_balance():
 def get_status():
     bs = BlockScanner()
     last_seen_block_num = bs.get_last_seen_block_num()
-    block =  bs.tron_client.get_block(last_seen_block_num)
+    block =  ConnectionManager.client().get_block(last_seen_block_num)
     return {'status': 'success', 'last_block_timestamp': block['block_header']['raw_data']['timestamp'] // 1000}
 
 @api.post('/transaction/<txid>')
 def get_transaction(txid):
-    tron_client = get_tron_client()
+    tron_client = ConnectionManager.client()
     tx = tron_client.get_transaction(txid)
     info = BlockScanner.get_tx_info(tx)
     try:
@@ -70,7 +71,7 @@ def dump():
 
 @api.post('/fee-deposit-account')
 def get_fee_deposit_account():
-    client = get_tron_client()
+    client = ConnectionManager.client()
     key = query_db('select * from keys where type = "fee_deposit"', one=True)
     try:
         balance = client.get_account_balance(key['public'])
@@ -83,3 +84,30 @@ def estimate_energy(src, dst, amount):
     res = estimateenergy(src, dst, amount, g.symbol)
     logger.warning(f"estimateenergy result: {res}")
     return res
+
+#
+# Multiserver
+#
+
+@api.get('/multiserver/status')
+def get_multiserver_status():
+    statuses = ConnectionManager.manager().get_servers_status()
+    return {'statuses': statuses}
+
+@api.post('/multiserver/change/<int:server_id>')
+def multiserver_change_server(server_id):
+    if server_id in range(len(ConnectionManager.manager().servers)):
+        ConnectionManager.manager().set_current_server_id(server_id)
+        return {'status': 'success', 'msg': f"Changing server to {server_id}"}
+    else:
+        return {'status': 'error',
+                'msg': f"Can't change server to {server_id}: no such server in {ConnectionManager.manager().servers}"}
+
+@api.post('/multiserver/switch-to-best')
+def multiserver_switch_to_best():
+    if ConnectionManager.manager().refresh_best_server():
+        return {'status': 'success',
+                'msg': f"Changing server to {ConnectionManager.manager().get_current_server_id()}"}
+    else:
+        return {'status': 'success',
+                'msg': f"Server {ConnectionManager.manager().get_current_server_id()} is already the best server"}

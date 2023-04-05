@@ -15,7 +15,9 @@ from .config import config, get_contract_address
 from .db import query_db2
 from .wallet import Wallet
 from .trc20wallet import PayoutStrategy, Trc20Wallet
-from .utils import get_non_empty_accounts, get_tron_client, transfer_to_fee_deposit, Account, skip_if_running
+from .utils import get_non_empty_accounts, transfer_to_fee_deposit, Account, skip_if_running
+from .connection_manager import ConnectionManager
+
 
 logger = get_task_logger(__name__)
 logger.propagate = False
@@ -52,7 +54,7 @@ def payout(steps, symbol):
 @celery.task()
 def transfer_trc20_tokens_to_main_account(onetime_publ_key, symbol):
 
-    tron_client = get_tron_client()
+    tron_client = ConnectionManager.client()
 
     contract_address = get_contract_address(symbol)
     contract = tron_client.get_contract(contract_address)
@@ -94,7 +96,7 @@ def transfer_trc20_tokens_to_main_account(onetime_publ_key, symbol):
 
 @celery.task()
 def transfer_trx_to_main_account(onetime_publ_key):
-    tron_client = get_tron_client()
+    tron_client = ConnectionManager.client()
     onetime_priv_key = PrivateKey(bytes.fromhex(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private']))
     main_publ_key = query_db2('select * from keys where type = "fee_deposit" ', one=True)['public']
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)

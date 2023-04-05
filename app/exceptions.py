@@ -7,3 +7,6 @@ class NotificationFailed(Exception):
 
 class BadContractResult(Exception):
     pass
+
+class AllServersOffline(Exception):
+    pass

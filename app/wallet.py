@@ -14,7 +14,8 @@ from tronpy.keys import PrivateKey
 from .config import config, get_contract_address
 from .db import query_db2
 from .logging import logger
-from .utils import get_tron_client, Account
+from .utils import Account
+from .connection_manager import ConnectionManager
 
 
 class Wallet:
@@ -28,7 +29,7 @@ class Wallet:
 
     def __init__(self, symbol='TRX'):
         self.symbol = symbol
-        self.client = get_tron_client()
+        self.client = ConnectionManager.client()
         if symbol != 'TRX':
             self.contract_address = get_contract_address(symbol)
 

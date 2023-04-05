@@ -10,7 +10,6 @@ import tronpy.exceptions
 from flask import current_app
 from tronpy import Tron
 from tronpy.keys import PrivateKey
-from tronpy.providers import HTTPProvider
 from tronpy.abi import trx_abi
 from werkzeug.routing import BaseConverter
 import requests
@@ -18,6 +17,7 @@ import requests
 from .config import config, get_contract_address
 from .db import get_db, query_db, query_db2
 from .logging import logger
+from .connection_manager import ConnectionManager
 
 
 @dataclass
@@ -68,14 +68,14 @@ def init_wallet(app):
             logger.info('Fee deposit account has been created.')
 
 def get_network_currency_balance(addr) -> Decimal:
-    client = get_tron_client()
+    client = ConnectionManager.client()
     try:
         return client.get_account_balance(addr)
     except tronpy.exceptions.AddressNotFound:
         return Decimal(0)
 
 def get_token_balance(addr, symbol) -> Decimal:
-    client = get_tron_client()
+    client = ConnectionManager.client()
     contract_address = get_contract_address(symbol)
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
@@ -112,7 +112,7 @@ def get_non_empty_accounts(symbol=None, fltr: Literal['tokens','currency'] = 'to
     return accounts
 
 def get_bandwidth(account):
-    client = get_tron_client()
+    client = ConnectionManager.client()
     try:
         resources = client.get_account_resource(account)
     except tronpy.exceptions.AddressNotFound:
@@ -141,7 +141,7 @@ def transfer_to_fee_deposit(accounts):
     if not accounts:
         logger.info(f'Onetime accounts have no unused network currency to send back to fee-deposit account.')
 
-    client = get_tron_client()
+    client = ConnectionManager.client()
     fee_deposit_key = query_db('select * from keys where type = "fee_deposit" ', one=True)
 
     for account in accounts:
@@ -158,17 +158,8 @@ def transfer_to_fee_deposit(accounts):
         except tronpy.exceptions.ValidationError as e:
             logger.info(f"Error while transferring to fee deposit account from {account['addr']}: {e}")
 
-def get_tron_client(node : Literal['full', 'solidity'] = 'full') -> Tron:
-    provider = HTTPProvider(config['FULLNODE_URL'] if node == 'full'
-                                                   else config['SOLIDITYNODE_URL'])
-    provider.sess.auth = (config['TRON_NODE_USERNAME'] , config['TRON_NODE_PASSWORD'])
-    adapter = requests.adapters.HTTPAdapter(pool_maxsize=(config['CONCURRENT_MAX_WORKERS'] + 1))
-    provider.sess.mount('http://', adapter)
-    provider.sess.mount('https://', adapter)
-    return Tron(provider)
-
 def get_wallet_balance(symbol) -> Decimal:
-    client = get_tron_client()
+    client = ConnectionManager.client()
     contract_address = get_contract_address(symbol)
     contract = client.get_contract(contract_address)
     precision = contract.functions.decimals()
@@ -179,7 +170,7 @@ def get_wallet_balance(symbol) -> Decimal:
     return balance
 
 def estimateenergy(src, dst, amount, symbol):
-    tron_client = get_tron_client()
+    tron_client = ConnectionManager.client()
 
     parameter = trx_abi.encode_single("(address,uint256)", [dst, int(amount * 1_000_000)]).hex()
     data = {

@@ -13,14 +13,15 @@ from tronpy.keys import PrivateKey
 from .config import config, get_contract_address
 from .db import query_db2
 from .logging import logger
-from .utils import get_tron_client, Account
+from .utils import Account
+from .connection_manager import ConnectionManager
 
 
 class Trc20Wallet:
 
     def __init__(self, symbol, init=True):
         self.symbol = symbol
-        self.client = get_tron_client()
+        self.client = ConnectionManager.client()
         if init:
             self.accounts = self.init_accounts()
         self.fee_account = None
