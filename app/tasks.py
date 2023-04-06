@@ -101,12 +101,12 @@ def transfer_trx_to_main_account(onetime_publ_key):
     main_publ_key = query_db2('select * from keys where type = "fee_deposit" ', one=True)['public']
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
 
-    tx_trx = tron_client.trx.transfer(onetime_publ_key, main_publ_key, int(onetime_acc_balance))
+    tx_trx = tron_client.trx.transfer(onetime_publ_key, main_publ_key, int(onetime_acc_balance * 1_000_000))
     tx_trx._raw_data['expiration'] = current_timestamp() + 60_000
     tx_trx = tx_trx.build()
     tx_trx = tx_trx.sign(onetime_priv_key)
     tx_trx_res = tx_trx.broadcast().wait()
-    logger.info(f"{onetime_acc_balance / 1_000_000} TRX sent to main account ({main_publ_key}) with TXID {tx_trx.txid}. Details: {tx_trx_res}")
+    logger.info(f"{onetime_acc_balance} TRX sent to main account ({main_publ_key}) with TXID {tx_trx.txid}. Details: {tx_trx_res}")
     return {'tx_trx_res': tx_trx_res}
 
 @celery.task()
