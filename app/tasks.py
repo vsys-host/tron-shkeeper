@@ -3,24 +3,22 @@ import datetime
 import decimal
 import sqlite3
 import time
+from decimal import Decimal
 
 from celery.schedules import crontab
-from celery.utils.log import get_task_logger
 from tronpy.keys import PrivateKey
 from tronpy.tron import current_timestamp
 import requests
 
 from . import celery
-from .config import config, get_contract_address
+from .config import config, get_contract_address, get_min_transfer_threshold
 from .db import query_db2
 from .wallet import Wallet
 from .trc20wallet import PayoutStrategy, Trc20Wallet
 from .utils import get_non_empty_accounts, transfer_to_fee_deposit, Account, skip_if_running
 from .connection_manager import ConnectionManager
+from .logging import logger
 
-
-logger = get_task_logger(__name__)
-logger.propagate = False
 
 @celery.task()
 def prepare_payout(dest, amount, symbol):
@@ -61,9 +59,15 @@ def transfer_trc20_tokens_to_main_account(onetime_publ_key, symbol):
     precision = contract.functions.decimals()
     token_balance = contract.functions.balanceOf(onetime_publ_key)
 
-    if token_balance <= 0:
-        logger.error(f"Skipping transfer: account {onetime_publ_key} has 0 {symbol}")
+    min_threshold = get_min_transfer_threshold(symbol)
+    balance = Decimal(token_balance) / 10**precision
+    if balance <= min_threshold:
+        logger.warning(f"Skipping transfer: account {onetime_publ_key} has only "
+                       f"{balance} {symbol}. Threshold is {min_threshold} {symbol}")
         return
+
+    logger.warning(f"Transfer to main acc started for {onetime_publ_key}. Balance: "
+                    f"{balance} {symbol}. Threshold is {min_threshold} {symbol}")
 
     main_acc_keys = query_db2('select * from keys where type = "fee_deposit" ', one=True)
     main_priv_key = PrivateKey(bytes.fromhex(main_acc_keys['private']))

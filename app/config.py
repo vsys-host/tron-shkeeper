@@ -50,6 +50,9 @@ config = {
 def get_contract_address(symbol):
     return config['TOKENS'][config['TRON_NETWORK']][symbol]['contract_address']
 
+def get_min_transfer_threshold(symbol):
+    return config['TOKENS'][config['TRON_NETWORK']][symbol].get('min_transfer_threshold', Decimal('0.5'))
+
 def get_symbol(contract_address):
     cont_addr_to_symbol = {
         config['TOKENS'][config['TRON_NETWORK']][symbol]['contract_address']: symbol
