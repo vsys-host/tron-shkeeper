@@ -25,6 +25,7 @@ config = {
 
     'TX_FEE': Decimal(os.environ.get('TX_FEE', 40)),  # includes bandwidth, energy and activation fees
     'TX_FEE_LIMIT': Decimal(os.environ.get('TX_FEE_LIMIT', 50)),  # max TRX tx can burn for resources (energy, bandwidth)
+    'MIN_TRANSFER_THRESHOLD': Decimal(os.environ.get('MIN_TRANSFER_THRESHOLD', '0.5')),
 
     # Block scanner
     'BLOCK_SCANNER_STATS_LOG_PERIOD': int(os.environ.get('BLOCK_SCANNER_STATS_LOG_PERIOD', 5)),
@@ -51,7 +52,7 @@ def get_contract_address(symbol):
     return config['TOKENS'][config['TRON_NETWORK']][symbol]['contract_address']
 
 def get_min_transfer_threshold(symbol):
-    return config['TOKENS'][config['TRON_NETWORK']][symbol].get('min_transfer_threshold', Decimal('0.5'))
+    return config['TOKENS'][config['TRON_NETWORK']][symbol].get('min_transfer_threshold', config['MIN_TRANSFER_THRESHOLD'])
 
 def get_symbol(contract_address):
     cont_addr_to_symbol = {
