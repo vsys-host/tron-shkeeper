@@ -6,7 +6,9 @@ from ..config import config
 from ..logging import logger
 
 api = Blueprint('api', __name__, url_prefix='/<symbol>')
+metrics_blueprint = Blueprint('metrics_blueprint', __name__, url_prefix='/')
 
+@metrics_blueprint.before_request
 @api.before_request
 def check_credentials():
     auth = request.authorization
@@ -30,4 +32,4 @@ def handle_exception(e):
     logger.warn(f"Exception: {traceback.format_exc()}")
     return {"status": "error", "msg": str(e)}
 
-from . import payout, views
+from . import payout, views, metrics
