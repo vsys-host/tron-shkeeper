@@ -23,13 +23,24 @@ tron_fullnode_last_release = Info(
 )
 tron_fullnode_last_release.info(get_latest_release())
 
+tron_fullnode_status = Gauge('tron_fullnode_status', '', ('server',))
 tron_fullnode_version = Info('tron_fullnode_version', '', ('server', 'version'))
 tron_fullnode_last_block = Gauge('tron_fullnode_last_block', '', ('server',))
-tron_wallet_last_block = Gauge('tron_wallet_last_block', '').set_function(lambda: BlockScanner().get_last_seen_block_num())
+tron_fullnode_last_block_ts = Gauge('tron_fullnode_last_block_ts', '', ('server',))
 
 @metrics_blueprint.get("/metrics")
 def get_metrics():
-    for server in filter(lambda x: x["status"] == "success", ConnectionManager.manager().get_servers_status()):
-        tron_fullnode_version.labels(server=server['name'], version=server["node_info"]["configNodeInfo"]["codeVersion"])
-        tron_fullnode_last_block.labels(server=server['name']).set(server["node_info"]["block"])
+    bs = BlockScanner()
+    last_seen_block_num = bs.get_last_seen_block_num()
+    Gauge('tron_wallet_last_block', '').set(last_seen_block_num)
+    Gauge('tron_wallet_last_block_ts', '').set(bs.download_block(last_seen_block_num)['block_header']['raw_data']['timestamp'] // 1000)
+
+    for server in ConnectionManager.manager().get_servers_status():
+        if server['status'] == "success":
+            tron_fullnode_status.labels(server=server['name']).set(1)
+            tron_fullnode_version.labels(server=server['name'], version=server["node_info"]["configNodeInfo"]["codeVersion"])
+            tron_fullnode_last_block.labels(server=server['name']).set(server["node_info"]["block"])
+            tron_fullnode_last_block_ts.labels(server=server['name']).set(server["node_info"]["block_ts"])
+        else:
+            tron_fullnode_status.labels(server=server['name']).set(0)
     return generate_latest().decode()
