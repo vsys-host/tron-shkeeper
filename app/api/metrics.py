@@ -29,6 +29,7 @@ tron_fullnode_last_block = Gauge('tron_fullnode_last_block', '', ('server',))
 tron_fullnode_last_block_ts = Gauge('tron_fullnode_last_block_ts', '', ('server',))
 tron_wallet_last_block = Gauge('tron_wallet_last_block', '')
 tron_wallet_last_block_ts = Gauge('tron_wallet_last_block_ts', '')
+tron_has_alive_servers = Gauge('tron_has_alive_servers', '')
 
 @metrics_blueprint.get("/metrics")
 def get_metrics():
@@ -39,6 +40,7 @@ def get_metrics():
 
     for server in ConnectionManager.manager().get_servers_status():
         if server['status'] == "success":
+            tron_has_alive_servers.set(1)
             tron_fullnode_status.labels(server=server['name']).set(1)
             tron_fullnode_version.labels(server=server['name'], version=server["node_info"]["configNodeInfo"]["codeVersion"])
             tron_fullnode_last_block.labels(server=server['name']).set(server["node_info"]["block"])
