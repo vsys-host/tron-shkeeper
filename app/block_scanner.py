@@ -15,7 +15,7 @@ from eth_abi.exceptions import NonEmptyPaddingBytes, InsufficientDataBytes
 from .config import config, get_symbol
 from .db import query_db2
 from .logging import logger
-from .exceptions import UnknownTransactionType, NotificationFailed, BadContractResult
+from .exceptions import NoServerSet, UnknownTransactionType, NotificationFailed, BadContractResult
 from .connection_manager import ConnectionManager
 
 
@@ -24,10 +24,6 @@ class BlockScanner:
     WATCHED_ACCOUNTS = set()
 
     def __call__(self):
-        num = self.get_last_seen_block_num()
-        logger.info(f'Last seen block number is {num}')
-        logger.info(f'Concurrency is set to {config["BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE"]}')
-
         with ThreadPoolExecutor(max_workers=config['BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE']) as executor:
             while True:
                 try:
@@ -46,7 +42,8 @@ class BlockScanner:
                         self.set_last_seen_block_num(blocks.stop - 1)
                     else:
                         logger.info(f"Some blocks failed, retrying chunk {blocks.start} - {blocks.stop - 1}")
-
+                except NoServerSet:
+                    time.sleep(1)
                 except Exception as e:
                     sleep_sec = 60
                     logger.exception(f"Exteption in main block scanner loop: {e}")

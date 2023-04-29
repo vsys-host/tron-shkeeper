@@ -10,3 +10,6 @@ class BadContractResult(Exception):
 
 class AllServersOffline(Exception):
     pass
+
+class NoServerSet(Exception):
+    pass

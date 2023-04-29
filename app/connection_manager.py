@@ -11,7 +11,7 @@ from tronpy.providers import HTTPProvider
 from .config import config
 from .db import query_db2
 from .logging import logger
-from .exceptions import AllServersOffline
+from .exceptions import AllServersOffline, NoServerSet
 
 
 class ConnectionManager:
@@ -45,6 +45,8 @@ class ConnectionManager:
 
     def get_client(self)  -> Tron:
         server_id = self.get_current_server_id()
+        if server_id is None:
+            raise NoServerSet('Current server is not set.')
         client = self.get_client_for_server_id(server_id)
         return client
 
@@ -128,9 +130,15 @@ class ConnectionManager:
     def refresh_best_server_thread_handler(self):
 
         if self.get_current_server_id() is None:
-            server_id = self.get_best_server_id()
-            query_db2('INSERT INTO settings VALUES ("current_server_id", ?)', (server_id,))
-            logger.info(f'Current server changed from None to: {server_id}')
+            while True:
+                try:
+                    server_id = self.get_best_server_id()
+                    query_db2('INSERT INTO settings VALUES ("current_server_id", ?)', (server_id,))
+                    logger.info(f'Current server set to: {server_id}')
+                    break
+                except Exception as e:
+                    logger.warning(f"Current server set error: {e}")
+                    time.sleep(config['MULTISERVER_REFRESH_BEST_SERVER_PERIOD'])
 
         while True:
             try:
