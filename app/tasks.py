@@ -12,7 +12,7 @@ import requests
 
 from . import celery
 from .config import config, get_contract_address, get_min_transfer_threshold
-from .db import query_db2
+from .db import query_db, query_db2
 from .wallet import Wallet
 from .trc20wallet import PayoutStrategy, Trc20Wallet
 from .utils import get_non_empty_accounts, transfer_to_fee_deposit, Account, skip_if_running
@@ -102,8 +102,12 @@ def transfer_trc20_tokens_to_main_account(onetime_publ_key, symbol):
 def transfer_trx_to_main_account(onetime_publ_key):
     tron_client = ConnectionManager.client()
     onetime_priv_key = PrivateKey(bytes.fromhex(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private']))
-    main_publ_key = query_db2('select * from keys where type = "fee_deposit" ', one=True)['public']
+
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
+    if onetime_acc_balance == 0:
+        return {'status':'error','error':'skipping 0 TRX account'}
+
+    main_publ_key = query_db2('select * from keys where type = "fee_deposit" ', one=True)['public']
 
     tx_trx = tron_client.trx.transfer(onetime_publ_key, main_publ_key, int(onetime_acc_balance * 1_000_000))
     tx_trx._raw_data['expiration'] = current_timestamp() + 60_000
@@ -187,7 +191,13 @@ def transfer_unused_fee(self):
     #
     # We are sending the entire TRX balance,
     # so there will be no TRX to burn for sure.
-    transfer_to_fee_deposit(get_non_empty_accounts(fltr='currency'))
+    rows = query_db('select public from keys where type = "onetime"')
+    for row in rows:
+        try:
+            res = transfer_trx_to_main_account(row['public'])
+            logger.warning(f'{row["public"]} -> main transfer result: {res}')
+        except Exception as e:
+            logger.warning(f'{row["public"]} -> main transfer error: {e}')
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
