@@ -197,7 +197,7 @@ def skip_if_running(f):
                         self.request.id != task['id']):
                     logger.debug(f'task {task_name} ({args}, {kwargs}) is running on {worker}, skipping')
 
-                    return None
+                    return 'skipped (already running)'
         logger.debug(f'task {task_name} ({args}, {kwargs}) is allowed to run')
         return f(self, *args, **kwargs)
 

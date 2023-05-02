@@ -184,6 +184,7 @@ def refresh_trc20_balances(self, symbol):
     return updated
 
 @celery.task(bind=True)
+@skip_if_running
 def transfer_unused_fee(self):
     # We don't need to check if accounts have a free bandwidth units
     # because tx will raise tronpy.exceptions.ValidationError
