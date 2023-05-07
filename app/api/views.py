@@ -10,7 +10,6 @@ from tronpy import Tron
 from ..db import get_db, query_db
 from ..utils import estimateenergy
 from ..logging import logger
-from ..trc20wallet import Trc20Wallet
 from ..wallet import Wallet
 from ..block_scanner import BlockScanner
 from ..connection_manager import ConnectionManager

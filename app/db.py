@@ -37,7 +37,7 @@ def query_db2(query, args=(), one=False):
     cur = db.execute(query, args)
     rv = cur.fetchall()
     cur.close()
-    logger.debug(f'query_db2({query}) took {time.time() - start_time} seconds')
+    # logger.debug(f'query_db2({query}) took {time.time() - start_time} seconds')
     return (rv[0] if rv else None) if one else rv
 
 def init_db(app):

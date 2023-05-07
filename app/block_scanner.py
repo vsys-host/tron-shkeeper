@@ -120,7 +120,7 @@ class BlockScanner:
             raise NotificationFailed(res)
 
     def scan(self, block_num: int) -> bool:
-        from .tasks import transfer_trc20_tokens_to_main_account, transfer_trx_to_main_account
+        from .tasks import transfer_trc20_from, transfer_trx_from
 
         try:
             block = self.download_block(block_num)
@@ -161,9 +161,9 @@ class BlockScanner:
 
                         # Send funds to main account
                         if info.is_trc20:
-                            transfer_trc20_tokens_to_main_account.delay(info.to_addr, info.symbol)
+                            transfer_trc20_from.delay(info.to_addr, info.symbol)
                         else:
-                            transfer_trx_to_main_account.delay(info.to_addr)
+                            transfer_trx_from.delay(info.to_addr)
                     else:
                         logger.warning(f"Not sending notification for tx with status {info.status}: {info}")
             logger.debug(f"block {block_num} info extraction time: {time.time() - start}")

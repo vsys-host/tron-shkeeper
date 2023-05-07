@@ -9,11 +9,8 @@ from .. import celery
 from ..config import config
 from ..tasks import payout as payout_task
 from ..tasks import prepare_payout, prepare_multipayout
-from ..tasks import transfer_unused_fee
-from ..utils import get_non_empty_accounts
 from . import api
 from ..wallet import Wallet
-from ..trc20wallet import PayoutStrategy, Trc20Wallet
 from ..logging import logger
 
 
@@ -83,12 +80,3 @@ def payout(to, amount):
 def get_task(id):
     task = celery.AsyncResult(id)
     return {'status': task.status, 'result': task.result}
-
-@api.post('/transfer-back')
-def transfer_back():
-    task = transfer_unused_fee.delay()
-    return {'task_id': task.id}
-
-@api.post('/balances/<type>')
-def get_balances(type='tokens'):
-    return {'accounts': get_non_empty_accounts(g.symbol, fltr=type)}

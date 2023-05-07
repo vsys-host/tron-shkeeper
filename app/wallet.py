@@ -14,7 +14,6 @@ from tronpy.keys import PrivateKey
 from .config import config, get_contract_address
 from .db import query_db2
 from .logging import logger
-from .utils import Account
 from .connection_manager import ConnectionManager
 
 

@@ -8,13 +8,12 @@ config = {
     'LOGGING_LEVEL': os.environ.get('LOGGING_LEVEL', 'INFO'),
     'DATABASE': os.environ.get('DATABASE', 'data/database.db'),
     'BALANCES_DATABASE': os.environ.get('BALANCES_DATABASE', 'data/trc20balances.db'),
-    'CONCURRENT_MAX_WORKERS': int(os.environ.get('CONCURRENT_MAX_WORKERS', 15)),
+    'CONCURRENT_MAX_WORKERS': int(os.environ.get('CONCURRENT_MAX_WORKERS', 1)),
     'CONCURRENT_MAX_RETRIES': int(os.environ.get('CONCURRENT_MAX_RETRIES', 10)),
-    'UPDATE_TOKEN_BALANCES_EVERY_SECONDS': int(os.environ.get('UPDATE_TOKEN_BALANCES_EVERY_SECONDS', 60)),
+    'SAVE_BALANCES_TO_DB': bool(os.environ.get('SAVE_BALANCES_TO_DB')),
 
     'REDIS_HOST': os.environ.get('REDIS_HOST', 'localhost'),
     'FULLNODE_URL': os.environ.get('FULLNODE_URL', 'http://fullnode.tron.shkeeper.io'),
-    'SOLIDITYNODE_URL': os.environ.get('SOLIDITYNODE_URL', 'http://soliditynode.tron.shkeeper.io'),
     'TRON_NODE_USERNAME': os.environ.get('TRON_NODE_USERNAME', 'shkeeper'),
     'TRON_NODE_PASSWORD': os.environ.get('TRON_NODE_PASSWORD', 'tron'),
 
@@ -29,7 +28,7 @@ config = {
 
     # Block scanner
     'BLOCK_SCANNER_STATS_LOG_PERIOD': int(os.environ.get('BLOCK_SCANNER_STATS_LOG_PERIOD', 5)),
-    'BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE': int(os.environ.get('BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE', 10)),
+    'BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE': int(os.environ.get('BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE', 1)),
     'BLOCK_SCANNER_INTERVAL_TIME': int(os.environ.get('BLOCK_SCANNER_INTERVAL_TIME', 3)),
     'BLOCK_SCANNER_LAST_BLOCK_NUM_HINT': os.environ.get('BLOCK_SCANNER_LAST_BLOCK_NUM_HINT'),
 
