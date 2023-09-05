@@ -4,6 +4,7 @@ from flask import Flask
 from .config import config
 from . import block_scanner
 from . import connection_manager
+from .wallet_encryption import wallet_encryption
 
 
 celery = Celery(

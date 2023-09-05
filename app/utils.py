@@ -18,6 +18,7 @@ from .config import config, get_contract_address
 from .db import get_db, query_db, query_db2
 from .logging import logger
 from .connection_manager import ConnectionManager
+from .wallet_encryption import wallet_encryption
 
 
 class DecimalConverter(BaseConverter):
@@ -44,7 +45,7 @@ def init_wallet(app):
             db = get_db()
             db.execute(
                 "INSERT INTO keys (symbol, public, private, type) VALUES ('_', ?, ?, 'fee_deposit')",
-                (addresses['base58check_address'], addresses['private_key']),
+                (addresses['base58check_address'], wallet_encryption.encrypt(addresses['private_key'])),
             )
             db.commit()
             logger.info('Fee deposit account has been created.')

@@ -14,6 +14,7 @@ from ..wallet import Wallet
 from ..block_scanner import BlockScanner
 from ..connection_manager import ConnectionManager
 from . import api
+from ..wallet_encryption import wallet_encryption
 
 
 @api.post("/generate-address")
@@ -25,7 +26,7 @@ def generate_new_address():
     db = get_db()
     db.execute(
         "INSERT INTO keys (symbol, public, private, type) VALUES (?, ?, ?, 'onetime')",
-        (g.symbol, addresses['base58check_address'], addresses['private_key']),
+        (g.symbol, addresses['base58check_address'], wallet_encryption.encrypt(addresses['private_key'])),
     )
     db.commit()
 
@@ -65,8 +66,20 @@ def get_transaction(txid):
 @api.post('/dump')
 def dump():
     rows = query_db('select * from keys where symbol = ? or type = "fee_deposit"', (g.symbol, ))
-    keys = [{key: row[key] for key in ('public', 'private', 'type', 'symbol')} for row in rows]
+    keys = []
+    for row in rows:
+        keys.append({
+            'public': row['public'],
+            'private': wallet_encryption.decrypt(row['private']),
+            'type': row['type'],
+            'symbol': row['symbol'],
+        })
     return {'accounts': keys}
+
+@api.get('/addresses')
+def list_addresses():
+    rows = query_db('select public from keys where symbol = ? or type = "fee_deposit"', (g.symbol, ))
+    return {'accounts': [row['public'] for row in rows]}
 
 @api.post('/fee-deposit-account')
 def get_fee_deposit_account():

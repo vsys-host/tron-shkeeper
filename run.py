@@ -4,6 +4,12 @@ import app
 
 
 #
+# Wallet encryption
+#
+
+app.wallet_encryption.setup_encryption()
+
+#
 # Refresh best server
 #
 

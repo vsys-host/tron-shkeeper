@@ -15,6 +15,7 @@ from .config import config, get_contract_address
 from .db import query_db2
 from .logging import logger
 from .connection_manager import ConnectionManager
+from .wallet_encryption import wallet_encryption
 
 
 class Wallet:
@@ -66,7 +67,7 @@ class Wallet:
 
         txn._raw_data['expiration'] += 60_000
         txn = (txn.build()
-                  .sign(PrivateKey(bytes.fromhex(self.main_account['private']))))
+                  .sign(PrivateKey(bytes.fromhex(wallet_encryption.decrypt(self.main_account['private'])))))
         txn_res = (txn.broadcast()
                       .wait())
 

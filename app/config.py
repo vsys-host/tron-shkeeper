@@ -36,6 +36,9 @@ config = {
     'MULTISERVER_CONFIG_JSON': os.environ.get('MULTISERVER_CONFIG_JSON'),
     'MULTISERVER_REFRESH_BEST_SERVER_PERIOD': int(os.environ.get('MULTISERVER_REFRESH_BEST_SERVER_PERIOD', 20)),
 
+    # Account encryption
+    'FORCE_WALLET_ENCRYPTION': os.environ.get('FORCE_WALLET_ENCRYPTION'),
+
     'TOKENS': {
         'main': {
             'USDT': {'contract_address': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'},

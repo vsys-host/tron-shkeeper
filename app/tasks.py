@@ -22,6 +22,7 @@ from .wallet import Wallet
 from .utils import skip_if_running
 from .connection_manager import ConnectionManager
 from .logging import logger
+from .wallet_encryption import wallet_encryption
 
 
 @celery.task()
@@ -77,7 +78,7 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                     f"{balance} {symbol}. Threshold is {min_threshold} {symbol}")
 
     main_acc_keys = query_db2('select * from keys where type = "fee_deposit" ', one=True)
-    main_priv_key = PrivateKey(bytes.fromhex(main_acc_keys['private']))
+    main_priv_key = PrivateKey(bytes.fromhex(wallet_encryption.decrypt(main_acc_keys['private'])))
     main_publ_key = main_acc_keys['public']
 
     main_acc_balance = tron_client.get_account_balance(main_publ_key)
@@ -92,7 +93,7 @@ def transfer_trc20_from(onetime_publ_key, symbol):
     tx_trx_res = tx_trx.broadcast().wait()
     logger.info(f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}")
 
-    onetime_priv_key = PrivateKey(bytes.fromhex(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private']))
+    onetime_priv_key = PrivateKey(bytes.fromhex(wallet_encryption.decrypt(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private'])))
 
     tx_token = contract.functions.transfer(main_publ_key, int(token_balance))
     tx_token = tx_token.with_owner(onetime_publ_key)
@@ -112,7 +113,7 @@ def transfer_trx_from(onetime_publ_key):
     '''
 
     tron_client = ConnectionManager.client()
-    onetime_priv_key = PrivateKey(bytes.fromhex(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private']))
+    onetime_priv_key = PrivateKey(bytes.fromhex(wallet_encryption.decrypt(query_db2('select * from keys where type = "onetime" and public = ?', (onetime_publ_key,), one=True)['private'])))
 
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
     if onetime_acc_balance == 0:
