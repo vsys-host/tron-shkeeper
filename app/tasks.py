@@ -16,7 +16,7 @@ import tronpy.exceptions
 import requests
 
 from . import celery
-from .config import config, get_contract_address, get_min_transfer_threshold
+from .config import config, get_contract_address, get_min_transfer_threshold, get_internal_trc20_tx_fee
 from .db import query_db, query_db2
 from .wallet import Wallet
 from .utils import skip_if_running
@@ -83,10 +83,10 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
     main_acc_balance = tron_client.get_account_balance(main_publ_key)
 
-    if main_acc_balance < config['TX_FEE']:
-        raise Exception(f"Main account hasn't enought currency: balance: {main_acc_balance} need: {config['TX_FEE']}")
+    if main_acc_balance < get_internal_trc20_tx_fee():
+        raise Exception(f"Main account hasn't enought currency: balance: {main_acc_balance} need: {get_internal_trc20_tx_fee()}")
 
-    tx_trx = tron_client.trx.transfer(main_publ_key, onetime_publ_key, int(config['TX_FEE'] * 1_000_000))
+    tx_trx = tron_client.trx.transfer(main_publ_key, onetime_publ_key, int(get_internal_trc20_tx_fee() * 1_000_000))
     tx_trx._raw_data['expiration'] = current_timestamp() + 60_000
     tx_trx = tx_trx.build()
     tx_trx = tx_trx.sign(main_priv_key)
@@ -258,4 +258,4 @@ def scan_accounts(self, *args, **kwargs):
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    sender.add_periodic_task(crontab(minute=0), scan_accounts.s())
+    sender.add_periodic_task(config['BALANCES_RESCAN_PERIOD'], scan_accounts.s())

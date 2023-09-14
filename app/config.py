@@ -10,6 +10,7 @@ config = {
     'BALANCES_DATABASE': os.environ.get('BALANCES_DATABASE', 'data/trc20balances.db'),
     'CONCURRENT_MAX_WORKERS': int(os.environ.get('CONCURRENT_MAX_WORKERS', 1)),
     'CONCURRENT_MAX_RETRIES': int(os.environ.get('CONCURRENT_MAX_RETRIES', 10)),
+    'BALANCES_RESCAN_PERIOD': int(os.environ.get('BALANCES_RESCAN_PERIOD', 3600)),
     'SAVE_BALANCES_TO_DB': bool(os.environ.get('SAVE_BALANCES_TO_DB')),
 
     'REDIS_HOST': os.environ.get('REDIS_HOST', 'localhost'),
@@ -22,6 +23,7 @@ config = {
     'SHKEEPER_KEY': os.environ.get('SHKEEPER_BACKEND_KEY', 'shkeeper'),
     'SHKEEPER_HOST': os.environ.get('SHKEEPER_HOST', 'localhost:5000'),
 
+    'INTERNAL_TX_FEE': Decimal(os.environ.get('INTERNAL_TX_FEE', 40)),
     'TX_FEE': Decimal(os.environ.get('TX_FEE', 40)),  # includes bandwidth, energy and activation fees
     'TX_FEE_LIMIT': Decimal(os.environ.get('TX_FEE_LIMIT', 50)),  # max TRX tx can burn for resources (energy, bandwidth)
     'MIN_TRANSFER_THRESHOLD': Decimal(os.environ.get('MIN_TRANSFER_THRESHOLD', '0.5')),
@@ -62,3 +64,6 @@ def get_symbol(contract_address):
             for symbol in config['TOKENS'][config['TRON_NETWORK']]
     }
     return cont_addr_to_symbol[contract_address]
+
+def get_internal_trc20_tx_fee():
+    return config['INTERNAL_TX_FEE']
