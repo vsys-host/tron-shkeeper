@@ -65,7 +65,8 @@ class Wallet:
                                                 .with_owner(self.main_account['public'])
                                                 .fee_limit(int(config['TX_FEE_LIMIT'] * 1_000_000)))
 
-        txn._raw_data['expiration'] += 60_000
+        # https://github.com/tronprotocol/java-tron/issues/2883#issuecomment-575007235
+        txn._raw_data['expiration'] += 12 * 60 * 60 * 1_000  # 12 hours
         txn = (txn.build()
                   .sign(PrivateKey(bytes.fromhex(wallet_encryption.decrypt(self.main_account['private'])))))
         txn_res = (txn.broadcast()
