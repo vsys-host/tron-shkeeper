@@ -79,4 +79,7 @@ def payout(to, amount):
 @api.post('/task/<id>')
 def get_task(id):
     task = celery.AsyncResult(id)
-    return {'status': task.status, 'result': task.result}
+    if isinstance(task.result, Exception):
+        return {'status': task.status, 'result': task.result.args[0]}
+    else:
+        return {'status': task.status, 'result': task.result}

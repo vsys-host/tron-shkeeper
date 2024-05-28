@@ -27,6 +27,8 @@ from .wallet_encryption import wallet_encryption
 
 @celery.task()
 def prepare_payout(dest, amount, symbol):
+    if (balance := Wallet(symbol).balance) < amount:
+        raise Exception(f"Wallet balance is less than payout amount: {balance} < {amount}")
     steps = []
     steps.append({
             'dst': dest,
