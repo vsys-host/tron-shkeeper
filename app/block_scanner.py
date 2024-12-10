@@ -48,7 +48,7 @@ class BlockScanner:
                         f"Block chunk {blocks.start} - {blocks.stop - 1} processed for {time.time() - start_time} seconds"
                     )
 
-                    if all(results):
+                    if results and all(results):
                         logger.debug(
                             f"Commiting chunk {blocks.start} - {blocks.stop - 1}"
                         )
