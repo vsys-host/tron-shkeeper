@@ -14,5 +14,8 @@ build/
 *.swp
 *~
 *.db
-celerybeat-schedule
+celerybeat*
 data/
+docker-compose*
+.env
+BUGS
