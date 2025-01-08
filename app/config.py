@@ -2,7 +2,7 @@ from decimal import Decimal
 from functools import cache
 from typing import List
 
-from pydantic import Json, field_validator
+from pydantic import Field, Json, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .custom.aml.schemas import ExternalDrain
@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     FULLNODE_URL: str = "http://fullnode.tron.shkeeper.io"
     TRON_NODE_USERNAME: str = "shkeeper"
     TRON_NODE_PASSWORD: str = "tron"
-    API_USERNAME: str = "shkeeper"
-    API_PASSWORD: str = "shkeeper"
+    API_USERNAME: str = Field("shkeeper", alias="BTC_USERNAME")
+    API_PASSWORD: str = Field("shkeeper", alias="BTC_PASSWORD")
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
     SHKEEPER_HOST: str = "localhost:5000"
     INTERNAL_TX_FEE: Decimal = "40"
