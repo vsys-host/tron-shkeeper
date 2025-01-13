@@ -4,16 +4,18 @@ from typing import List, Literal
 import requests
 from sqlmodel import Session, select
 
+
 from ...custom.aml.tasks import (
     check_transaction,
 )
 
+from ...exceptions import UnknownToken
 from ...schemas import TronSymbol, TronAddress
-from .models import Transaction, Payout
 from ...db import engine
 from ...logging import logger
 from ...config import config
 from ...utils import short_txid
+from .models import Transaction, Payout
 
 
 def add_transaction_to_db(hash, account, amount, symbol, internal_type=False):
@@ -65,7 +67,18 @@ def get_min_check_amount(symbol: TronSymbol) -> Decimal:
     return config.EXTERNAL_DRAIN_CONFIG.aml_check.cryptos[symbol].min_check_amount
 
 
-def get_external_drain_type(symbol: TronSymbol) -> Literal["aml", "regular"]:
+def get_external_drain_type(
+    symbol: TronSymbol,
+) -> Literal["aml", "regular", "symbol_not_found"]:
+    if (
+        symbol not in config.EXTERNAL_DRAIN_CONFIG.aml_check.cryptos
+        or symbol not in config.EXTERNAL_DRAIN_CONFIG.regular_split.cryptos
+    ):
+        logger.warning(
+            f"Symbol {symbol} is not configured for aml or regular split payout."
+        )
+        return "symbol_not_found"
+
     if (
         config.EXTERNAL_DRAIN_CONFIG.aml_check.state == "enabled"
         and symbol in config.EXTERNAL_DRAIN_CONFIG.aml_check.cryptos
@@ -259,8 +272,4 @@ def build_payout_list(
             return new_payout_list
 
     else:
-        logger.error(
-            f"Can't build payout list: "
-            f"check that {symbol} is configured in EXTERNAL_DRAIN_CONFIG"
-        )
         return False
