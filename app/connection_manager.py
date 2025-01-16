@@ -15,7 +15,6 @@ from .exceptions import AllServersOffline, NoServerSet
 
 
 class ConnectionManager:
-
     instance = None
 
     @classmethod
@@ -125,7 +124,7 @@ class ConnectionManager:
                 status = {
                     "id": server_id,
                     "is_active": self.get_current_server_id() == server_id,
-                    **server,
+                    **server.model_dump(),
                     "status": "error",
                     "error": str(e),
                 }
@@ -154,7 +153,6 @@ class ConnectionManager:
         return False
 
     def refresh_best_server_thread_handler(self):
-
         if self.get_current_server_id() is None:
             while True:
                 try:
