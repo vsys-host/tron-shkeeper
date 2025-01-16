@@ -207,7 +207,7 @@ class BlockScanner:
                         )
                         continue
                     logger.info(f"Sending notification for TX {tron_tx=}")
-                    self.notify_shkeeper(tron_tx.symbol, tron_tx.txid)
+                    self.notify_shkeeper(tron_tx.symbol.value, tron_tx.txid)
                     if (
                         self.main_account not in (tron_tx.src_addr, tron_tx.dst_addr)
                         and tron_tx.dst_addr in valid_addresses
@@ -259,7 +259,7 @@ class BlockScanner:
                     if tron_tx.dst_addr in valid_addresses:
                         if tron_tx.status == "SUCCESS":
                             logger.info(f"Sending notification for {tron_tx}")
-                            self.notify_shkeeper(tron_tx.symbol, tron_tx.txid)
+                            self.notify_shkeeper(tron_tx.symbol.value, tron_tx.txid)
                             # Send funds to main account
                             if tron_tx.is_trc20:
                                 transfer_trc20_from.delay(
