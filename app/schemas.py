@@ -31,6 +31,12 @@ class TronSymbol(str, Enum):
     USDT = "USDT"
     USDC = "USDC"
 
+    def __str__(self):
+        return self.value
+
+    def __repr__(self):
+        return self.value
+
 
 def is_tron_address(value: str) -> str:
     if tronpy.keys.is_base58check_address(value):
