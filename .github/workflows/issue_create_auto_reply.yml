@@ -4,13 +4,11 @@ on:
     types:
       - opened
 
+permissions: write-all
+
 jobs:
   add-comment:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      repository-projects: read
     steps:
       - name: checkout repo
         uses: actions/checkout@v4
