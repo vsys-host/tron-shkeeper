@@ -149,6 +149,19 @@ class BlockScanner:
         logger.debug(f"Block {n} download took {time.time() - start_time} seconds")
         return block
 
+    @functools.lru_cache(maxsize=config.BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE)
+    def download_tx_info_by_block_num(self, n):
+        start_time = time.time()
+        transaction_results = ConnectionManager.client().provider.make_request(
+            "wallet/gettransactioninfobyblocknum", {"num": n, "visible": True}
+        )
+        logger.debug(
+            f"Tx info for block {n} download took {time.time() - start_time} seconds"
+        )
+        return {
+            result["id"]: result for result in transaction_results if "log" in result
+        }
+
     def notify_shkeeper(self, symbol, txid):
         url = f"http://{config.SHKEEPER_HOST}/api/v1/walletnotify/{symbol}/{txid}"
         headers = {"X-Shkeeper-Backend-Key": config.SHKEEPER_BACKEND_KEY}
@@ -169,13 +182,17 @@ class BlockScanner:
             if "transactions" not in block:
                 logger.debug(f"Block {block_num}: No transactions")
                 return True
+
+            block_tx_info = self.download_tx_info_by_block_num(block_num)
+
             start = time.time()
             valid_addresses = self.get_watched_accounts()
 
             txs = block["transactions"]
             for tx in txs:
                 try:
-                    tron_tx_list = parse_tx(tx)
+                    tx_info = block_tx_info.get(tx["txID"], {})
+                    tron_tx_list = parse_tx(tx, tx_info)
                     logger.debug(f"Block {block_num}: Found {tron_tx_list=}")
 
                 except (
@@ -284,7 +301,7 @@ class BlockScanner:
         return True
 
 
-def parse_tx(tx: dict) -> List[TronTransaction]:
+def parse_tx(tx: dict, transaction_info) -> List[TronTransaction]:
     transactions = []
     is_trc20 = False
     txid = tx["txID"]
@@ -317,12 +334,8 @@ def parse_tx(tx: dict) -> List[TronTransaction]:
     elif tx_type == "TriggerSmartContract":
         is_trc20 = True
 
-        transaction_info = ConnectionManager.client().provider.make_request(
-            "wallet/gettransactioninfobyid", {"value": txid, "visible": True}
-        )
-
         if "log" not in transaction_info:
-            raise UnknownTransactionType("Transaction produced no logs")
+            raise UnknownTransactionType(f"Transaction {txid} produced no logs")
 
         for entry in transaction_info["log"]:
             try:
