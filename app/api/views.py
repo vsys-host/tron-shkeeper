@@ -86,6 +86,7 @@ def get_transaction(txid):
             "category": "receive",
         }
         for info in tron_tx_list
+        if info.dst_addr in BlockScanner.get_watched_accounts()
     ]
 
 
