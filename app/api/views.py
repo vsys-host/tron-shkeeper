@@ -69,7 +69,7 @@ def get_status():
 def get_transaction(txid):
     tron_client = ConnectionManager.client()
     tx = tron_client.get_transaction(txid)
-    info = parse_tx(tx)
+    tron_tx_list = parse_tx(tx)
     try:
         latest_block_number = tron_client.get_latest_block_number()
         tx_block_number = tron_client.get_transaction_info(txid)["blockNumber"]
@@ -77,12 +77,16 @@ def get_transaction(txid):
     except tronpy.exceptions.TransactionNotFound:
         logger.warning(f"Can't get confirmations for {txid}")
         confirmations = 1
-    return {
-        "address": info.dst_addr,
-        "amount": info.amount,
-        "confirmations": confirmations,
-        "category": "receive",
-    }
+
+    return [
+        {
+            "address": info.dst_addr,
+            "amount": info.amount,
+            "confirmations": confirmations,
+            "category": "receive",
+        }
+        for info in tron_tx_list
+    ]
 
 
 @api.post("/dump")

@@ -147,7 +147,7 @@ def transfer_trc20_from(onetime_publ_key, symbol):
     tx_token = tx_token.sign(onetime_priv_key)
     tx_token_res = tx_token.broadcast().wait()
     logger.info(
-        f"{token_balance / 10**precision} {symbol} sent to {onetime_publ_key} with {tx_token.txid}. Details: {tx_token_res}"
+        f"{token_balance / 10**precision} {symbol} sent to {main_publ_key} with {tx_token.txid}. Details: {tx_token_res}"
     )
 
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
