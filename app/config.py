@@ -1,9 +1,11 @@
 from decimal import Decimal
 from functools import cache
 from typing import List
+import os
 
-from pydantic import Field, Json, field_validator
+from pydantic import Field, Json, field_validator, validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import ClassVar
 
 from .custom.aml.schemas import ExternalDrain
 from .schemas import TronFullnode, TronNetwork, Token, TronSymbol
@@ -54,6 +56,13 @@ class Settings(BaseSettings):
     AML_RESULT_UPDATE_PERIOD: int = 120
     AML_SWEEP_ACCOUNTS_PERIOD: int = 3600
     AML_WAIT_BEFORE_API_CALL: int = 320
+    READ_MODE: bool = False
+
+    @validator("READ_MODE", pre=True)
+    def parse_read_mode(cls, v):
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes", "enabled")
+        return bool(v)
 
     TOKENS: List[Token] = [
         Token(

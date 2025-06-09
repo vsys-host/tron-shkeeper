@@ -28,6 +28,8 @@ from .wallet_encryption import wallet_encryption
 
 @celery.task()
 def prepare_payout(dest, amount, symbol):
+    if config.READ_MODE:
+      return
     if (balance := Wallet(symbol).balance) < amount:
         raise Exception(
             f"Wallet balance is less than payout amount: {balance} < {amount}"
@@ -74,6 +76,8 @@ def payout(steps, symbol):
 
 @celery.task()
 def transfer_trc20_from(onetime_publ_key, symbol):
+    if config.READ_MODE:
+      return
     """
     Transfers TRC20 from onetime to main account
     """
@@ -155,6 +159,8 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
 @celery.task()
 def transfer_trx_from(onetime_publ_key):
+    if config.READ_MODE:
+      return
     """
     Transfers TRX from onetime to main account
     """
@@ -257,10 +263,11 @@ def scan_accounts(self, *args, **kwargs):
                 .functions.decimals()
             )
 
-        accounts = [
-            row["public"]
-            for row in query_db('SELECT public FROM keys WHERE type = "onetime"')
-        ]
+        query = 'SELECT public FROM keys WHERE type = ?'
+        accounts_onetime = [row["public"] for row in query_db(query, ("onetime",))]
+        accounts_read_mode = [row["public"] for row in query_db(query, ("only_read",))]
+        accounts = accounts_read_mode if config.READ_MODE else accounts_onetime
+
         for index, account in enumerate(accounts, start=1):
             try:
                 #

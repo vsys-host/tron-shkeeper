@@ -162,6 +162,18 @@ class BlockScanner:
             result["id"]: result for result in transaction_results if "log" in result
         }
 
+    def mark_key_as_finished(self, dst_addr):
+        row = query_db2(
+            'SELECT 1 FROM keys WHERE public = ? AND type = "only_read"',
+            (dst_addr,),
+            one=True
+        )
+        if row:
+            query_db2(
+                'UPDATE keys SET type = "only_read_finished" WHERE public = ? AND type = "only_read"',
+                (dst_addr,)
+            )
+
     def notify_shkeeper(self, symbol, txid):
         url = f"http://{config.SHKEEPER_HOST}/api/v1/walletnotify/{symbol}/{txid}"
         headers = {"X-Shkeeper-Backend-Key": config.SHKEEPER_BACKEND_KEY}
@@ -279,6 +291,7 @@ class BlockScanner:
                         if tron_tx.dst_addr in valid_addresses:
                             if tron_tx.status == "SUCCESS":
                                 logger.info(f"Sending notification for {tron_tx}")
+                                self.mark_key_as_finished(tron_tx.dst_addr)
                                 self.notify_shkeeper(tron_tx.symbol.value, tron_tx.txid)
                                 # Send funds to main account
                                 if tron_tx.is_trc20:

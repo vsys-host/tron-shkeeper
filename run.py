@@ -2,7 +2,6 @@ import threading
 
 import app
 
-
 #
 # Wallet encryption
 #
@@ -12,6 +11,11 @@ app.wallet_encryption.setup_encryption()
 #
 # Refresh best server
 #
+#
+# Flask
+#
+
+server = app.create_app()
 
 refresh_best_server_thread = threading.Thread(
     daemon=True,
@@ -20,11 +24,6 @@ refresh_best_server_thread = threading.Thread(
 )
 refresh_best_server_thread.start()
 
-#
-# Flask
-#
-
-server = app.create_app()
 
 #
 # Block scanner

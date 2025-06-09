@@ -5,6 +5,7 @@ import requests
 
 import tronpy.exceptions
 from flask import current_app, g
+from flask import request
 from tronpy import Tron
 
 from ..db import get_db, query_db
@@ -15,31 +16,22 @@ from ..block_scanner import BlockScanner, parse_tx
 from ..connection_manager import ConnectionManager
 from . import api
 from ..wallet_encryption import wallet_encryption
+from ..config import config
+from .services.address_service import generate_address_from_xpub, generate_address_with_private_key
 
 
 @api.post("/generate-address")
 def generate_new_address():
-    client = Tron()
-    addresses = client.generate_address()
-
-    db = get_db()
-    db.execute(
-        "INSERT INTO keys (symbol, public, private, type) VALUES (?, ?, ?, 'onetime')",
-        (
-            g.symbol,
-            addresses["base58check_address"],
-            wallet_encryption.encrypt(addresses["private_key"]),
-        ),
-    )
-    db.commit()
-
-    BlockScanner.add_watched_account(addresses["base58check_address"])
-
-    return {
-        "status": "success",
-        "base58check_address": addresses["base58check_address"],
-    }
-
+    symbol = g.symbol
+    if config.READ_MODE:
+        data = request.get_json(silent=True) or {}
+        xpub_str = data.get("xpub")
+        address = generate_address_from_xpub(symbol, xpub_str)
+        return {"status": "success", "base58check_address": address}
+    else:
+        client = Tron()
+        address = generate_address_with_private_key(symbol, client)
+        return {"status": "success", "base58check_address": address}
 
 @api.post("/balance")
 def get_balance():

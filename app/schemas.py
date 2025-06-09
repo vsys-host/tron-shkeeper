@@ -14,6 +14,8 @@ import tronpy
 class KeyType(str, Enum):
     fee_deposit = "fee_deposit"
     onetime = "onetime"
+    only_read = "only_read"
+    only_read_finished = "only_read_finished"
 
 
 class TronNetwork(str, Enum):
