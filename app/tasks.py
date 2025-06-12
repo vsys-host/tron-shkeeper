@@ -12,6 +12,7 @@ from typing import Dict, List
 from celery.schedules import crontab
 from tronpy.keys import PrivateKey
 from tronpy.tron import current_timestamp
+from tronpy import Tron
 import tronpy.exceptions
 import requests
 from sqlmodel import Session, select
@@ -263,11 +264,10 @@ def scan_accounts(self, *args, **kwargs):
                 .functions.decimals()
             )
 
-        query = 'SELECT public FROM keys WHERE type = ?'
-        accounts_onetime = [row["public"] for row in query_db(query, ("onetime",))]
-        accounts_read_mode = [row["public"] for row in query_db(query, ("only_read",))]
-        accounts = accounts_read_mode if config.READ_MODE else accounts_onetime
-
+        accounts = [
+            row["public"]
+            for row in query_db('SELECT public FROM keys WHERE type = "onetime"')
+        ]
         for index, account in enumerate(accounts, start=1):
             try:
                 #
@@ -381,9 +381,87 @@ def scan_accounts(self, *args, **kwargs):
                 stats["exception_num"] += 1
     return stats
 
+@celery.task(bind=True)
+@skip_if_running
+def scan_ballance(self, *args, **kwargs):
+    """
+    Scans accounts balances (TRX and TRC20),
+    """
+    from .db import engine
+    from .models import Balance
+    from tronpy import Tron
+    client = Tron()
+    with Session(engine) as session:
+        stats = {
+            "balances": collections.defaultdict(Decimal),
+            "exception_num": 0,
+        }
+
+        accounts = [
+            row["public"]
+            for row in query_db('SELECT public FROM keys WHERE type = "only_read_finished"')
+        ]
+
+        for index, account in enumerate(accounts, start=1):
+            try:
+                # === TRX BALANCE ===
+                trx_balance = client.get_account_balance(account)
+                stats["balances"]["TRX"] += trx_balance
+                logger.debug(f"[TRX] {account} -> {trx_balance} TRX")
+
+                if config.READ_MODE:
+                    acc_balance = session.exec(
+                        select(Balance).where(Balance.account == account, Balance.symbol == "TRX")
+                    ).first()
+                    if acc_balance:
+                        acc_balance.balance = trx_balance
+                    else:
+                        acc_balance = Balance(
+                            account=account,
+                            symbol="TRX",
+                            balance=trx_balance,
+                        )
+                    session.add(acc_balance)
+                    session.commit()
+
+                # === TRC20 TOKENS ===
+                for token in config.get_tokens():
+                    symbol = token.symbol
+                    contract_address = token.contract_address
+                    contract = client.get_contract(contract_address)
+
+                    # balanceOf returns balance in raw token units
+                    raw_balance = contract.functions.balanceOf(account)
+                    trc20_balance = Decimal(raw_balance) / (10 ** token.decimal)
+
+                    stats["balances"][symbol] += trc20_balance
+                    logger.debug(f"[{symbol}] {account} -> {trc20_balance} tokens")
+
+                    if config.READ_MODE:
+                        acc_balance = session.exec(
+                            select(Balance).where(Balance.account == account, Balance.symbol == symbol)
+                        ).first()
+                        if acc_balance:
+                            acc_balance.balance = trc20_balance
+                        else:
+                            acc_balance = Balance(
+                                account=account,
+                                symbol=symbol,
+                                balance=trc20_balance,
+                            )
+                        session.add(acc_balance)
+                        session.commit()
+
+            except Exception as e:
+                stats["exception_num"] += 1
+                logger.warning(f"[ERROR] {account} scan error: {e}")
+
+        return stats
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
+    if config.READ_MODE:
+        sender.add_periodic_task(config.BALANCES_RESCAN_PERIOD, scan_ballance.s())
     if config.EXTERNAL_DRAIN_CONFIG:
         from .custom.aml.tasks import sweep_accounts, recheck_transactions
 

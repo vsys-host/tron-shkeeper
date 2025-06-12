@@ -3,8 +3,12 @@ from decimal import Decimal
 import tronpy.exceptions
 from tronpy.keys import PrivateKey
 
+from sqlalchemy import func
+from sqlmodel import Session, select
+from .models import Balance
 from .config import config
 from .db import query_db2
+from .db import engine
 from .logging import logger
 from .connection_manager import ConnectionManager
 from .wallet_encryption import wallet_encryption
@@ -38,7 +42,14 @@ class Wallet:
 
     @property
     def balance(self):
-        return self.balance_of(self.main_account["public"])
+        if config.READ_MODE:
+            with Session(engine) as session:
+                total_sum = session.exec(select(func.sum(Balance.balance))).one()
+                raw_balance = total_sum if total_sum is not None else Decimal(0)
+                overall_balance = float(round(raw_balance, 6))
+            return overall_balance
+        else:
+            return self.balance_of(self.main_account["public"])
 
     def balance_of(self, address):
         if self.symbol == "TRX":
