@@ -22,7 +22,6 @@ import decimal, sqlite3
 sqlite3.register_adapter(decimal.Decimal, lambda x: str(x))
 sqlite3.register_converter("DECTEXT", lambda x: decimal.Decimal(x.decode()))
 
-
 def create_app():
 
     from flask.config import Config
@@ -47,13 +46,12 @@ def create_app():
     from . import db
 
     db.init_app(app)
+    key_type = "only_read" if app.config.READ_MODE else "onetime"
 
-    block_scanner.BlockScanner.set_watched_accounts(
-        [
-            row["public"]
-            for row in db.query_db2('select public from keys where type = "onetime"')
-        ]
-    )
+    rows = db.query_db2(f'SELECT public FROM keys WHERE type = "{key_type}"')
+    accounts = [row["public"] for row in rows]
+
+    block_scanner.BlockScanner.set_watched_accounts(accounts)
 
     from . import utils
 

@@ -2,7 +2,6 @@ import threading
 
 import app
 
-
 #
 # Wallet encryption
 #
