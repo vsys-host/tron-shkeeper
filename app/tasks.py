@@ -97,13 +97,18 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
     tx_trx_res = None
 
+    logger.info(f"Check ONETIME={onetime_publ_key} {symbol} balance")
     min_threshold = config.get_min_transfer_threshold(symbol)
     balance = Decimal(token_balance) / 10**precision
     if balance <= min_threshold:
         logger.warning(
-            f"Treshold not reached for {onetime_publ_key}. Has: {balance}{symbol} need: {min_threshold}{symbol}. Terminating transfer."
+            f"Treshold not reached for {onetime_publ_key}. Has: {balance} {symbol} need: {min_threshold} {symbol}. Terminating transfer."
         )
         return
+    else:
+        logger.info(
+            f"Balance OK: {balance} {symbol}. Threshold: {min_threshold} {symbol}"
+        )
 
     if config.ENERGY_DELEGATION_MODE:
         logger.info(
