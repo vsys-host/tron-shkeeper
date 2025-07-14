@@ -97,6 +97,14 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
     tx_trx_res = None
 
+    min_threshold = config.get_min_transfer_threshold(symbol)
+    balance = Decimal(token_balance) / 10**precision
+    if balance <= min_threshold:
+        logger.warning(
+            f"Treshold not reached for {onetime_publ_key}. Has: {balance}{symbol} need: {min_threshold}{symbol}. Terminating transfer."
+        )
+        return
+
     if config.ENERGY_DELEGATION_MODE:
         logger.info(
             f"Initiating TRC20 tokens transfer from ONETIME={onetime_publ_key} to MAIN={main_publ_key} in ENERGY DELEGATION MODE"
@@ -124,19 +132,19 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
         if staked_bandwidth_available < need_bw:
             logger.info(
-                f"Not enought staked bandwidth. Has: {staked_bandwidth_available} Need: {need_bw}"
+                f"Not enough staked bandwidth. Has: {staked_bandwidth_available} Need: {need_bw}"
             )
             if free_bandwidth_available < need_bw:
                 logger.info(
-                    f"Not enought free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
+                    f"Not enough free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
                 )
                 if config.ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH:
                     logger.info("Burning TRX for bandwidth.")
                 else:
                     logger.warning(
-                        "Main account has not enought staked or free bandwidth to procced. Terminating transfer."
+                        "Main account has not enough staked or free bandwidth to procced. Terminating transfer."
                     )
-                    raise Exception("No staked or free bandwidth to procced")
+                    return
             else:
                 logger.info(
                     f"Using free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
@@ -161,9 +169,10 @@ def transfer_trc20_from(onetime_publ_key, symbol):
             main_trx_balance = tron_client.get_account_balance(main_publ_key)
             logger.info(f"Main account balance: {main_trx_balance} TRX")
             if main_trx_balance < Decimal(TRX_FOR_ACTIVATION):
-                raise Exception(
+                logger.warning(
                     f"Not enough TRX to activate {onetime_publ_key}. Terminating transfer."
                 )
+                return
             else:
                 logger.info("Main account TRX balance OK.")
 
@@ -186,7 +195,10 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                     onetime_publ_key
                 )
             except tronpy.exceptions.AddressNotFound:
-                raise Exception("Onetime acount still not on chain after activation")
+                logger.warning(
+                    "Onetime acount still not on chain after activation. Terminating transfer."
+                )
+                return
 
         logger.info("Estimate the amount of energy needed to make transfer")
         energy_needed = tron_client.get_estimated_energy(
@@ -211,11 +223,11 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         )
 
         if onetime_energy_available >= energy_needed:
-            logger.info("Onetime account has enought energy for transfer.")
+            logger.info("Onetime account has enough energy for transfer.")
 
         else:
             logger.info(
-                "Onetime account hasn't enought energy for transfer. Delegating energy to onetime account"
+                "Onetime account hasn't enough energy for transfer. Delegating energy to onetime account"
             )
 
             logger.info("Check if energy was alread delegated")
@@ -230,9 +242,10 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                 )
 
                 if onetime_energy_available < energy_needed:
-                    raise Exception(
-                        "Onetime account has not enought energy after previous delegation. Terminating transfer!"
+                    logger.warning(
+                        "Onetime account has not enough energy after previous delegation. Terminating transfer."
                     )
+                    return
 
             else:
                 logger.info("No delagated energy found")
@@ -248,9 +261,10 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                     logger.info(f"{delegetable_sun=} {sun_needed=}")
 
                     if delegetable_sun < sun_needed:
-                        raise Exception(
-                            "Main account has not enough energy, terminating transfer"
+                        logger.warning(
+                            "Main account has not enough energy. Terminating transfer."
                         )
+                        return
                     else:
                         logger.info("Main account has enough energy")
                         logger.info("Delegating energy to onetime account")
@@ -287,30 +301,25 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                             f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=}"
                         )
                         if onetime_energy_available < energy_needed:
-                            raise Exception(
-                                "Onetime account has not enought energy after delegation"
+                            logger.warning(
+                                "Onetime account has not enough energy after delegation. Terminating transfer."
                             )
+                            return
                         else:
                             logger.info("Energy ok. Proceeding to transfer")
 
                 else:
-                    raise Exception("Main account has no delegatable energy")
+                    logger.warning(
+                        "Main account has no delegatable energy. Terminating transfer."
+                    )
+                    return
 
     else:
         logger.info(
             "Transferring TRC20 tokens from onetime to main in TRX burning mode"
         )
 
-        min_threshold = config.get_min_transfer_threshold(symbol)
-        balance = Decimal(token_balance) / 10**precision
-        if balance <= min_threshold:
-            logger.warning(
-                f"Skipping transfer: account {onetime_publ_key} has only "
-                f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
-            )
-            return
-
-        logger.warning(
+        logger.info(
             f"Transfer to main acc started for {onetime_publ_key}. Balance: "
             f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
         )
@@ -318,9 +327,10 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         main_acc_balance = tron_client.get_account_balance(main_publ_key)
 
         if main_acc_balance < config.get_internal_trc20_tx_fee():
-            raise Exception(
-                f"Main account hasn't enought currency: balance: {main_acc_balance} need: {config.get_internal_trc20_tx_fee()}"
+            logger.warning(
+                f"Main account hasn't enough currency: balance: {main_acc_balance} need: {config.get_internal_trc20_tx_fee()}.  Terminating transfer."
             )
+            return
 
         tx_trx = tron_client.trx.transfer(
             main_publ_key,
