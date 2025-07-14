@@ -221,7 +221,6 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         ) / onetime_address_resources.get("TotalEnergyLimit")
 
         sun_needed = math.ceil(trx_needed) * 1_000_000
-        sun_needed = math.ceil((2356108592 * energy_needed) / 180000000000) * 1_000_000
 
         logger.info(
             f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=} {trx_needed=} {sun_needed=}"
