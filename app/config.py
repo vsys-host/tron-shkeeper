@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     MULTISERVER_REFRESH_BEST_SERVER_PERIOD: int = 20
     # Account encryption
     FORCE_WALLET_ENCRYPTION: bool = False
+    # DEV MODE
+    DEVMODE_ENCRYPTION_PW: str | None = None
+    DEVMODE_SKIP_NOTIFICATIONS: bool = False
+    DEVMODE_CELERY_NODELAY: bool = False
     # AML
     EXTERNAL_DRAIN_CONFIG: ExternalDrain | None = None
     DELAY_AFTER_FEE_TRANSFER: float = 60

@@ -150,6 +150,12 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         f"{token_balance / 10**precision} {symbol} sent to {main_publ_key} with {tx_token.txid}. Details: {tx_token_res}"
     )
 
+    if config.ENERGY_DELEGATION_MODE:
+        if config.DEVMODE_CELERY_NODELAY:
+            undelegate_energy(onetime_publ_key, sun_needed)
+        else:
+            undelegate_energy.delay(onetime_publ_key, sun_needed)
+
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
 
 

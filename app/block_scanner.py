@@ -163,6 +163,10 @@ class BlockScanner:
         }
 
     def notify_shkeeper(self, symbol, txid):
+        if config.DEVMODE_SKIP_NOTIFICATIONS:
+            logger.info(f"[DEVMODE] Skipping notification for TXID {txid}")
+            return
+
         url = f"http://{config.SHKEEPER_HOST}/api/v1/walletnotify/{symbol}/{txid}"
         headers = {"X-Shkeeper-Backend-Key": config.SHKEEPER_BACKEND_KEY}
         res = requests.post(url, headers=headers).json()
@@ -282,9 +286,14 @@ class BlockScanner:
                                 self.notify_shkeeper(tron_tx.symbol.value, tron_tx.txid)
                                 # Send funds to main account
                                 if tron_tx.is_trc20:
-                                    transfer_trc20_from.delay(
-                                        tron_tx.dst_addr, tron_tx.symbol
-                                    )
+                                    if config.DEVMODE_CELERY_NODELAY:
+                                        transfer_trc20_from(
+                                            tron_tx.dst_addr, tron_tx.symbol
+                                        )
+                                    else:
+                                        transfer_trc20_from.delay(
+                                            tron_tx.dst_addr, tron_tx.symbol
+                                        )
                                 else:
                                     transfer_trx_from.delay(tron_tx.dst_addr)
                             else:
