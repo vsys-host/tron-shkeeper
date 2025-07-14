@@ -54,9 +54,11 @@ class BlockScanner:
                         )
                         self.set_last_seen_block_num(blocks.stop - 1)
                     else:
+                        chunk_retry_sleep_period = 5
                         logger.info(
-                            f"Some blocks failed, retrying chunk {blocks.start} - {blocks.stop - 1}"
+                            f"Some blocks failed, retrying chunk {blocks.start} - {blocks.stop - 1} after {chunk_retry_sleep_period}s"
                         )
+                        time.sleep(chunk_retry_sleep_period)
                 except NoServerSet:
                     time.sleep(1)
                 except Exception as e:
