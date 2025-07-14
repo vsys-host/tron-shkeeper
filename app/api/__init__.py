@@ -7,8 +7,10 @@ from ..logging import logger
 
 api = Blueprint("api", __name__, url_prefix="/<symbol>")
 metrics_blueprint = Blueprint("metrics_blueprint", __name__, url_prefix="/")
+staking_bp = Blueprint("staking_bp", __name__, url_prefix="/staking")
 
 
+@staking_bp.before_request
 @metrics_blueprint.before_request
 @api.before_request
 def check_credentials():
@@ -39,4 +41,4 @@ def handle_exception(e):
     return {"status": "error", "msg": str(e)}
 
 
-from . import payout, views, metrics
+from . import payout, views, metrics, staking

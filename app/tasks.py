@@ -4,6 +4,8 @@ from contextlib import closing
 import datetime
 import decimal
 from functools import cache, lru_cache
+import json
+import math
 import sqlite3
 import time
 from decimal import Decimal
@@ -12,6 +14,7 @@ from typing import Dict, List
 from celery.schedules import crontab
 from tronpy.keys import PrivateKey
 from tronpy.tron import current_timestamp
+from tronpy.abi import trx_abi
 import tronpy.exceptions
 import requests
 from sqlmodel import Session, select
@@ -83,22 +86,6 @@ def transfer_trc20_from(onetime_publ_key, symbol):
     contract_address = config.get_contract_address(symbol)
     contract = tron_client.get_contract(contract_address)
     precision = contract.functions.decimals()
-    token_balance = contract.functions.balanceOf(onetime_publ_key)
-
-    min_threshold = config.get_min_transfer_threshold(symbol)
-    balance = Decimal(token_balance) / 10**precision
-    if balance <= min_threshold:
-        logger.warning(
-            f"Skipping transfer: account {onetime_publ_key} has only "
-            f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
-        )
-        return
-
-    logger.warning(
-        f"Transfer to main acc started for {onetime_publ_key}. Balance: "
-        f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
-    )
-
     main_acc_keys = query_db2(
         'select * from keys where type = "fee_deposit" ', one=True
     )
@@ -106,26 +93,247 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
     )
     main_publ_key = main_acc_keys["public"]
+    token_balance = contract.functions.balanceOf(onetime_publ_key)
 
-    main_acc_balance = tron_client.get_account_balance(main_publ_key)
+    tx_trx_res = None
 
-    if main_acc_balance < config.get_internal_trc20_tx_fee():
-        raise Exception(
-            f"Main account hasn't enought currency: balance: {main_acc_balance} need: {config.get_internal_trc20_tx_fee()}"
+    if config.ENERGY_DELEGATION_MODE:
+        logger.info(
+            f"Initiating TRC20 tokens transfer from ONETIME={onetime_publ_key} to MAIN={main_publ_key} in ENERGY DELEGATION MODE"
         )
 
-    tx_trx = tron_client.trx.transfer(
-        main_publ_key,
-        onetime_publ_key,
-        int(config.get_internal_trc20_tx_fee() * 1_000_000),
-    )
-    tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
-    tx_trx = tx_trx.build()
-    tx_trx = tx_trx.sign(main_priv_key)
-    tx_trx_res = tx_trx.broadcast().wait()
-    logger.info(
-        f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}"
-    )
+        logger.info("Check main account bandwidth")
+        main_acc_res = tron_client.get_account_resource(main_publ_key)
+        free_bandwidth_available = main_acc_res["freeNetLimit"] - main_acc_res.get(
+            "freeNetUsed", 0
+        )
+        staked_bandwidth_available = main_acc_res["NetLimit"] - main_acc_res.get(
+            "NetUsed", 0
+        )
+        logger.info(
+            f"Main account: {staked_bandwidth_available=} {free_bandwidth_available=}"
+        )
+        logger.debug(f"{main_acc_res=}")
+
+        need_bw = (
+            config.BANDWIDTH_PER_DELEGE_CALL
+            + config.BANDWIDTH_PER_UNDELEGATE_CALL
+            + config.BANDWIDTH_PER_TRX_TRANSFER
+        )
+        logger.info(f"Estimated bandwidth requirement: {need_bw}")
+
+        if staked_bandwidth_available < need_bw:
+            logger.info(
+                f"Not enought staked bandwidth. Has: {staked_bandwidth_available} Need: {need_bw}"
+            )
+            if free_bandwidth_available < need_bw:
+                logger.info(
+                    f"Not enought free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
+                )
+                if config.ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH:
+                    logger.info("Burning TRX for bandwidth.")
+                else:
+                    logger.warning(
+                        "Main account has not enought staked or free bandwidth to procced. Terminating transfer."
+                    )
+                    raise Exception("No staked or free bandwidth to procced")
+            else:
+                logger.info(
+                    f"Using free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
+                )
+        else:
+            logger.info(
+                f"Using staked bandwidth. Has: {staked_bandwidth_available} Need: {need_bw}"
+            )
+
+        try:
+            onetime_address_resources = tron_client.get_account_resource(
+                onetime_publ_key
+            )
+            logger.info(
+                f"Onetime {onetime_publ_key} is already on chain, skipping actication. Resource details {onetime_address_resources=}"
+            )
+        except tronpy.exceptions.AddressNotFound:
+            TRX_FOR_ACTIVATION = "1.1"
+            logger.info(
+                f"Check if main account has {TRX_FOR_ACTIVATION} TRX for activation"
+            )
+            main_trx_balance = tron_client.get_account_balance(main_publ_key)
+            logger.info(f"Main account balance: {main_trx_balance} TRX")
+            if main_trx_balance < Decimal(TRX_FOR_ACTIVATION):
+                raise Exception(
+                    f"Not enough TRX to activate {onetime_publ_key}. Terminating transfer."
+                )
+            else:
+                logger.info("Main account TRX balance OK.")
+
+            logger.info(f"Activating {onetime_publ_key} by sending 0.1 TRX")
+            tx_trx = tron_client.trx.transfer(
+                main_publ_key,
+                onetime_publ_key,
+                int(0.1 * 1_000_000),
+            )
+            tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
+            tx_trx = tx_trx.build()
+            tx_trx = tx_trx.sign(main_priv_key)
+            tx_trx_res = tx_trx.broadcast().wait()
+            logger.info(f"0.1 TRX sent. Details: {tx_trx_res}")
+            onetime_address_resources = tron_client.get_account_resource(
+                onetime_publ_key
+            )
+            try:
+                onetime_address_resources = tron_client.get_account_resource(
+                    onetime_publ_key
+                )
+            except tronpy.exceptions.AddressNotFound:
+                raise Exception("Onetime acount still not on chain after activation")
+
+        logger.info("Estimate the amount of energy needed to make transfer")
+        energy_needed = tron_client.get_estimated_energy(
+            onetime_publ_key,
+            contract_address,
+            "transfer(address,uint256)",
+            trx_abi.encode_single("(address,uint256)", (main_publ_key, 42)).hex(),
+        )
+        logger.info(f"Estimated amount of energy for transfer is: {energy_needed}")
+
+        logger.info("Check the energy of onetime address")
+        onetime_energy_available = onetime_address_resources.get("EnergyLimit", 0)
+        trx_needed = (
+            onetime_address_resources.get("TotalEnergyWeight") * energy_needed
+        ) / onetime_address_resources.get("TotalEnergyLimit")
+
+        sun_needed = math.ceil(trx_needed) * 1_000_000
+        sun_needed = math.ceil((2356108592 * energy_needed) / 180000000000) * 1_000_000
+
+        logger.info(
+            f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=} {trx_needed=} {sun_needed=}"
+        )
+
+        if onetime_energy_available >= energy_needed:
+            logger.info("Onetime account has enought energy for transfer.")
+
+        else:
+            logger.info(
+                "Onetime account hasn't enought energy for transfer. Delegating energy to onetime account"
+            )
+
+            logger.info("Check if energy was alread delegated")
+
+            onetime_delegated_resources = (
+                tron_client.get_delegated_resource_account_index_v2(onetime_publ_key)
+            )
+
+            if "fromAccounts" in onetime_delegated_resources:
+                logger.info(
+                    f"Found delegated energy on onetime account. Details {onetime_delegated_resources=}"
+                )
+
+                if onetime_energy_available < energy_needed:
+                    raise Exception(
+                        "Onetime account has not enought energy after previous delegation. Terminating transfer!"
+                    )
+
+            else:
+                logger.info("No delagated energy found")
+
+                logger.info("Check if main account can delegate energy")
+                result = tron_client.provider.make_request(
+                    "wallet/getcandelegatedmaxsize",
+                    {"owner_address": main_publ_key, "type": 1, "visible": True},
+                )
+                if "max_size" in result:
+                    delegetable_sun = result["max_size"]
+
+                    logger.info(f"{delegetable_sun=} {sun_needed=}")
+
+                    if delegetable_sun < sun_needed:
+                        raise Exception(
+                            "Main account has not enough energy, terminating transfer"
+                        )
+                    else:
+                        logger.info("Main account has enough energy")
+                        logger.info("Delegating energy to onetime account")
+
+                        unsigned_tx = tron_client.trx.delegate_resource(
+                            owner=main_publ_key,
+                            receiver=onetime_publ_key,
+                            balance=sun_needed,
+                            resource="ENERGY",
+                        ).build()
+                        signed_tx = unsigned_tx.sign(main_priv_key)
+                        signed_tx.inspect()
+                        logger.info(
+                            f"TX json size: {len(json.dumps(signed_tx._raw_data))}"
+                        )
+
+                        delegate_tx_info = signed_tx.broadcast().wait()
+
+                        logger.info(
+                            f"Delegated {energy_needed} energy to onetime account {onetime_publ_key} with TXID: {unsigned_tx.txid}"
+                        )
+                        logger.info(delegate_tx_info)
+
+                        logger.info(
+                            "Recheck resources of the onetime address after energy delegation"
+                        )
+                        onetime_address_resources = tron_client.get_account_resource(
+                            onetime_publ_key
+                        )
+                        onetime_energy_available = onetime_address_resources.get(
+                            "EnergyLimit", 0
+                        )
+                        logger.info(
+                            f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=}"
+                        )
+                        if onetime_energy_available < energy_needed:
+                            raise Exception(
+                                "Onetime account has not enought energy after delegation"
+                            )
+                        else:
+                            logger.info("Energy ok. Proceeding to transfer")
+
+                else:
+                    raise Exception("Main account has no delegatable energy")
+
+    else:
+        logger.info(
+            "Transferring TRC20 tokens from onetime to main in TRX burning mode"
+        )
+
+        min_threshold = config.get_min_transfer_threshold(symbol)
+        balance = Decimal(token_balance) / 10**precision
+        if balance <= min_threshold:
+            logger.warning(
+                f"Skipping transfer: account {onetime_publ_key} has only "
+                f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
+            )
+            return
+
+        logger.warning(
+            f"Transfer to main acc started for {onetime_publ_key}. Balance: "
+            f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
+        )
+
+        main_acc_balance = tron_client.get_account_balance(main_publ_key)
+
+        if main_acc_balance < config.get_internal_trc20_tx_fee():
+            raise Exception(
+                f"Main account hasn't enought currency: balance: {main_acc_balance} need: {config.get_internal_trc20_tx_fee()}"
+            )
+
+        tx_trx = tron_client.trx.transfer(
+            main_publ_key,
+            onetime_publ_key,
+            int(config.get_internal_trc20_tx_fee() * 1_000_000),
+        )
+        tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
+        tx_trx = tx_trx.build()
+        tx_trx = tx_trx.sign(main_priv_key)
+        tx_trx_res = tx_trx.broadcast().wait()
+        logger.info(
+            f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}"
+        )
 
     onetime_priv_key = PrivateKey(
         bytes.fromhex(
@@ -157,6 +365,35 @@ def transfer_trc20_from(onetime_publ_key, symbol):
             undelegate_energy.delay(onetime_publ_key, sun_needed)
 
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
+
+
+@celery.task()
+def undelegate_energy(receiver, balance):
+    logger.info("Undelegating energy from onetime account")
+
+    tron_client = ConnectionManager.client()
+
+    main_acc_keys = query_db2(
+        'select * from keys where type = "fee_deposit" ', one=True
+    )
+    main_priv_key = PrivateKey(
+        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
+    )
+    main_publ_key = main_acc_keys["public"]
+
+    unsigned_tx = tron_client.trx.undelegate_resource(
+        owner=main_publ_key,
+        receiver=receiver,
+        balance=balance,
+        resource="ENERGY",
+    ).build()
+    signed_tx = unsigned_tx.sign(main_priv_key)
+    undelegate_tx_info = signed_tx.broadcast().wait()
+
+    logger.info(
+        f"Undelegated resources from onetime account {receiver} with TXID: {unsigned_tx.txid}"
+    )
+    logger.info(undelegate_tx_info)
 
 
 @celery.task()

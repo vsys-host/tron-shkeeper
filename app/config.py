@@ -36,6 +36,8 @@ class Settings(BaseSettings):
         "50"  # max TRX tx can burn for resources (energy, bandwidth)
     )
     BANDWIDTH_PER_TRX_TRANSFER: int = 270
+    BANDWIDTH_PER_DELEGE_CALL: int = 278
+    BANDWIDTH_PER_UNDELEGATE_CALL: int = 280
     TRX_PER_BANDWIDTH_UNIT: Decimal = "0.001"
     TRX_MIN_TRANSFER_THRESHOLD: Decimal = "0.5"
     # Block scanner
@@ -58,6 +60,10 @@ class Settings(BaseSettings):
     AML_RESULT_UPDATE_PERIOD: int = 120
     AML_SWEEP_ACCOUNTS_PERIOD: int = 3600
     AML_WAIT_BEFORE_API_CALL: int = 320
+    # Resource delegation
+    ENERGY_DELEGATION_MODE: bool = False
+    ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH: bool = False
+    ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT: bool = False
 
     TOKENS: List[Token] = [
         Token(
