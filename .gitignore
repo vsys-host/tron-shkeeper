@@ -19,3 +19,5 @@ data/
 docker-compose*
 .env
 BUGS
+.vscode
+*.http
