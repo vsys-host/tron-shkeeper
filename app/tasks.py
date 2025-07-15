@@ -279,7 +279,7 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         trx_needed = (
             onetime_address_resources.get("TotalEnergyWeight") * energy_needed
         ) / onetime_address_resources.get("TotalEnergyLimit")
-
+        trx_needed *= config.ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR
         sun_needed = math.ceil(trx_needed) * 1_000_000
 
         logger.info(
@@ -324,6 +324,9 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                             onetime_address_resources.get("TotalEnergyWeight")
                             * energy_diff
                         ) / onetime_address_resources.get("TotalEnergyLimit")
+                        additional_trx_needed *= (
+                            config.ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR
+                        )
                         additional_sun_needed = (
                             math.ceil(additional_trx_needed) * 1_000_000
                         )
