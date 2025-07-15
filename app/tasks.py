@@ -96,6 +96,66 @@ def transfer_trc20_from(onetime_publ_key, symbol):
     token_balance = contract.functions.balanceOf(onetime_publ_key)
 
     tx_trx_res = None
+    sun_delegated: int | None = None
+
+    def delegate_energy(sun_to_delegate):
+        logger.info("Check if main account can delegate energy")
+        result = tron_client.provider.make_request(
+            "wallet/getcandelegatedmaxsize",
+            {"owner_address": main_publ_key, "type": 1, "visible": True},
+        )
+        if "max_size" not in result:
+            raise Exception(
+                "Main account has no delegatable energy. Terminating transfer."
+            )
+        else:
+            delegetable_sun = result["max_size"]
+
+            logger.info(f"{delegetable_sun=} {sun_to_delegate=}")
+
+            if delegetable_sun < sun_to_delegate:
+                raise Exception(
+                    "Main account has not enough energy. Terminating transfer."
+                )
+            else:
+                logger.info("Main account has enough energy")
+
+                logger.info("Delegating energy to onetime account")
+
+                unsigned_tx = tron_client.trx.delegate_resource(
+                    owner=main_publ_key,
+                    receiver=onetime_publ_key,
+                    balance=sun_to_delegate,
+                    resource="ENERGY",
+                ).build()
+                signed_tx = unsigned_tx.sign(main_priv_key)
+                logger.info(f"TX json size: {len(json.dumps(signed_tx._raw_data))}")
+
+                delegate_tx_info = signed_tx.broadcast().wait()
+
+                logger.info(
+                    f"Delegated {energy_needed} energy to onetime account {onetime_publ_key} with TXID: {unsigned_tx.txid}"
+                )
+                logger.info(delegate_tx_info)
+
+                logger.info(
+                    "Recheck resources of the onetime address after energy delegation"
+                )
+                onetime_address_resources = tron_client.get_account_resource(
+                    onetime_publ_key
+                )
+                onetime_energy_available = onetime_address_resources.get(
+                    "EnergyLimit", 0
+                )
+                logger.info(
+                    f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=}"
+                )
+                if onetime_energy_available < energy_needed:
+                    raise Exception(
+                        "Onetime account has not enough energy after delegation. Terminating transfer."
+                    )
+                else:
+                    logger.info("Energy successfuly delegated")
 
     logger.info(f"Check ONETIME={onetime_publ_key} {symbol} balance")
     min_threshold = config.get_min_transfer_threshold(symbol)
@@ -247,77 +307,39 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
                 if onetime_energy_available < energy_needed:
                     logger.warning(
-                        "Onetime account has not enough energy after previous delegation. Terminating transfer."
+                        "Onetime account has not enough energy after previous delegation."
                     )
-                    return
 
+                    if config.ENERGY_DELEGATION_MODE_ALLOW_ADDITIONAL_ENERGY_DELEGATION:
+                        logger.info(
+                            "Additional energy delegation is allowed. Calculating the difference."
+                        )
+                        energy_diff = energy_needed - onetime_energy_available
+
+                        if energy_diff <= 0:
+                            logger.warning(
+                                f"Energy diff = {energy_diff}. Terminating transfer."
+                            )
+                        additional_trx_needed = (
+                            onetime_address_resources.get("TotalEnergyWeight")
+                            * energy_diff
+                        ) / onetime_address_resources.get("TotalEnergyLimit")
+                        additional_sun_needed = (
+                            math.ceil(additional_trx_needed) * 1_000_000
+                        )
+                        logger.info(
+                            "Energy diff is {energy_diff}. TRX to delegate: {additional_trx_needed}"
+                        )
+                        delegate_energy(additional_sun_needed)
+                        sun_delegated = additional_sun_needed
+
+                    else:
+                        logger.warning("Terminating transfer.")
+                        return
             else:
                 logger.info("No delagated energy found")
-
-                logger.info("Check if main account can delegate energy")
-                result = tron_client.provider.make_request(
-                    "wallet/getcandelegatedmaxsize",
-                    {"owner_address": main_publ_key, "type": 1, "visible": True},
-                )
-                if "max_size" in result:
-                    delegetable_sun = result["max_size"]
-
-                    logger.info(f"{delegetable_sun=} {sun_needed=}")
-
-                    if delegetable_sun < sun_needed:
-                        logger.warning(
-                            "Main account has not enough energy. Terminating transfer."
-                        )
-                        return
-                    else:
-                        logger.info("Main account has enough energy")
-                        logger.info("Delegating energy to onetime account")
-
-                        unsigned_tx = tron_client.trx.delegate_resource(
-                            owner=main_publ_key,
-                            receiver=onetime_publ_key,
-                            balance=sun_needed,
-                            resource="ENERGY",
-                        ).build()
-                        signed_tx = unsigned_tx.sign(main_priv_key)
-                        signed_tx.inspect()
-                        logger.info(
-                            f"TX json size: {len(json.dumps(signed_tx._raw_data))}"
-                        )
-
-                        delegate_tx_info = signed_tx.broadcast().wait()
-
-                        logger.info(
-                            f"Delegated {energy_needed} energy to onetime account {onetime_publ_key} with TXID: {unsigned_tx.txid}"
-                        )
-                        logger.info(delegate_tx_info)
-
-                        logger.info(
-                            "Recheck resources of the onetime address after energy delegation"
-                        )
-                        onetime_address_resources = tron_client.get_account_resource(
-                            onetime_publ_key
-                        )
-                        onetime_energy_available = onetime_address_resources.get(
-                            "EnergyLimit", 0
-                        )
-                        logger.info(
-                            f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=}"
-                        )
-                        if onetime_energy_available < energy_needed:
-                            logger.warning(
-                                "Onetime account has not enough energy after delegation. Terminating transfer."
-                            )
-                            return
-                        else:
-                            logger.info("Energy ok. Proceeding to transfer")
-
-                else:
-                    logger.warning(
-                        "Main account has no delegatable energy. Terminating transfer."
-                    )
-                    return
-
+                delegate_energy(sun_needed)
+                sun_delegated = sun_needed
     else:
         logger.info(
             "Transferring TRC20 tokens from onetime to main in TRX burning mode"
@@ -374,9 +396,9 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
     if config.ENERGY_DELEGATION_MODE:
         if config.DEVMODE_CELERY_NODELAY:
-            undelegate_energy(onetime_publ_key, sun_needed)
+            undelegate_energy(onetime_publ_key, sun_delegated)
         else:
-            undelegate_energy.delay(onetime_publ_key, sun_needed)
+            undelegate_energy.delay(onetime_publ_key, sun_delegated)
 
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
 
