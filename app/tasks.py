@@ -428,7 +428,10 @@ def undelegate_energy(receiver):
         return
     frozen_balance_for_energy = 0
     for resource in result["delegatedResource"]:
-        if "frozen_balance_for_energy" in resource:
+        if (
+            "frozen_balance_for_energy" in resource
+            and resource["from"] == main_publ_key
+        ):
             frozen_balance_for_energy += resource["frozen_balance_for_energy"]
     if not frozen_balance_for_energy:
         logger.info(
