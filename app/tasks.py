@@ -96,7 +96,13 @@ def transfer_trc20_from(onetime_publ_key, symbol):
     token_balance = contract.functions.balanceOf(onetime_publ_key)
 
     tx_trx_res = None
-    sun_delegated: int | None = None
+
+    def calc_sun_for_energy_delegation(energy, res):
+        trx: int = math.ceil(
+            (res["TotalEnergyWeight"] * energy) / res["TotalEnergyLimit"]
+        )
+        trx *= config.ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR
+        return int(trx * 1_000_000)
 
     def delegate_energy(sun_to_delegate):
         logger.info("Check if main account can delegate energy")
@@ -275,23 +281,18 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         logger.info(f"Estimated amount of energy for transfer is: {energy_needed}")
 
         logger.info("Check the energy of onetime address")
+
         onetime_energy_available = onetime_address_resources.get("EnergyLimit", 0)
-        trx_needed = (
-            onetime_address_resources.get("TotalEnergyWeight") * energy_needed
-        ) / onetime_address_resources.get("TotalEnergyLimit")
-        trx_needed *= config.ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR
-        sun_needed = math.ceil(trx_needed) * 1_000_000
-
-        logger.info(
-            f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=} {trx_needed=} {sun_needed=}"
-        )
-
         if onetime_energy_available >= energy_needed:
-            logger.info("Onetime account has enough energy for transfer.")
+            logger.info(
+                f"Onetime account {onetime_publ_key} has {onetime_energy_available} "
+                f"of {energy_needed} energy. Skipping delegation."
+            )
 
         else:
             logger.info(
-                "Onetime account hasn't enough energy for transfer. Delegating energy to onetime account"
+                f"Onetime account {onetime_publ_key} has {onetime_energy_available} "
+                f"of {energy_needed} energy"
             )
 
             logger.info("Check if energy was alread delegated")
@@ -320,29 +321,26 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                             logger.warning(
                                 f"Energy diff = {energy_diff}. Terminating transfer."
                             )
-                        additional_trx_needed = (
-                            onetime_address_resources.get("TotalEnergyWeight")
-                            * energy_diff
-                        ) / onetime_address_resources.get("TotalEnergyLimit")
-                        additional_trx_needed *= (
-                            config.ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR
-                        )
-                        additional_sun_needed = (
-                            math.ceil(additional_trx_needed) * 1_000_000
+
+                        sun_needed = calc_sun_for_energy_delegation(
+                            energy_diff, onetime_address_resources
                         )
                         logger.info(
-                            "Energy diff is {energy_diff}. TRX to delegate: {additional_trx_needed}"
+                            f"Energy diff is {energy_diff}. TRX to delegate: {sun_needed / 1_000_000}"
                         )
-                        delegate_energy(additional_sun_needed)
-                        sun_delegated = additional_sun_needed
-
                     else:
                         logger.warning("Terminating transfer.")
                         return
             else:
                 logger.info("No delagated energy found")
-                delegate_energy(sun_needed)
-                sun_delegated = sun_needed
+                sun_needed = calc_sun_for_energy_delegation(
+                    energy_needed, onetime_address_resources
+                )
+
+            logger.info(
+                f"Delegating {sun_needed / 1_000_000} TRX to {onetime_publ_key}"
+            )
+            delegate_energy(sun_needed)
     else:
         logger.info(
             "Transferring TRC20 tokens from onetime to main in TRX burning mode"
@@ -399,16 +397,16 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
     if config.ENERGY_DELEGATION_MODE:
         if config.DEVMODE_CELERY_NODELAY:
-            undelegate_energy(onetime_publ_key, sun_delegated)
+            undelegate_energy(onetime_publ_key)
         else:
-            undelegate_energy.delay(onetime_publ_key, sun_delegated)
+            undelegate_energy.delay(onetime_publ_key)
 
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
 
 
 @celery.task()
-def undelegate_energy(receiver, balance):
-    logger.info("Undelegating energy from onetime account")
+def undelegate_energy(receiver):
+    logger.info(f"Undelegating energy from onetime account {receiver}")
 
     tron_client = ConnectionManager.client()
 
@@ -420,19 +418,42 @@ def undelegate_energy(receiver, balance):
     )
     main_publ_key = main_acc_keys["public"]
 
+    result = tron_client.get_delegated_resource_v2(
+        fromAddr=main_publ_key, toAddr=receiver
+    )
+    if "delegatedResource" not in result:
+        logger.info(
+            f"Onetime account {receiver} has no any resources delegated. Skipping undelegation."
+        )
+        return
+    frozen_balance_for_energy = 0
+    for resource in result["delegatedResource"]:
+        if "frozen_balance_for_energy" in resource:
+            frozen_balance_for_energy += resource["frozen_balance_for_energy"]
+    if not frozen_balance_for_energy:
+        logger.info(
+            f"Onetime account {receiver} has no energy delegated. "
+            f"Skipping undelegation. Resource details: {result}"
+        )
+        return
+
+    logger.info(
+        f"Undelegating {frozen_balance_for_energy / 1_000_000} TRX from {receiver}"
+    )
+
     unsigned_tx = tron_client.trx.undelegate_resource(
         owner=main_publ_key,
         receiver=receiver,
-        balance=balance,
+        balance=frozen_balance_for_energy,
         resource="ENERGY",
     ).build()
     signed_tx = unsigned_tx.sign(main_priv_key)
     undelegate_tx_info = signed_tx.broadcast().wait()
 
     logger.info(
-        f"Undelegated resources from onetime account {receiver} with TXID: {unsigned_tx.txid}"
+        f"Undelegated {frozen_balance_for_energy / 1_000_000} TRX from {receiver} with TXID: {unsigned_tx.txid}"
     )
-    logger.info(undelegate_tx_info)
+    logger.debug(undelegate_tx_info)
 
 
 @celery.task()
