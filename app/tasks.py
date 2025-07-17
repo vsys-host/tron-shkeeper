@@ -11,6 +11,7 @@ import time
 from decimal import Decimal
 from typing import Dict, List
 
+from celery import Celery
 from celery.schedules import crontab
 from pydantic import TypeAdapter
 from tronpy.keys import PrivateKey
@@ -676,7 +677,6 @@ def vote_for_sr(self, *args, **kwargs):
     main_publ_key = main_acc_keys["public"]
     logger.info(f"Checking current votes for {main_publ_key}")
     acc_info = tron_client.get_account(main_publ_key)
-    logger.info(acc_info)
 
     if "votes" in acc_info:
         from .schemas import SrVote
@@ -748,7 +748,7 @@ def claim_reward(self, *args, **kwargs):
 
 
 @celery.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
+def setup_periodic_tasks(sender: Celery, **kwargs):
     if config.SR_VOTING:
         vote_for_sr.delay()
 
