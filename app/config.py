@@ -6,7 +6,7 @@ from pydantic import Field, Json, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .custom.aml.schemas import ExternalDrain
-from .schemas import TronFullnode, TronNetwork, Token, TronSymbol
+from .schemas import TronFullnode, TronNetwork, Token, TronSymbol, SrVote
 from .exceptions import UnknownToken
 
 
@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT: bool = False
     ENERGY_DELEGATION_MODE_ALLOW_ADDITIONAL_ENERGY_DELEGATION: bool = False
     ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR: Decimal = "1.5"
+    # Voting
+    SR_VOTING: bool = False
+    SR_VOTES: Json[List[SrVote]] | None = None
+    SR_VOTING_ALLOW_BURN_TRX: bool = False
 
     TOKENS: List[Token] = [
         Token(

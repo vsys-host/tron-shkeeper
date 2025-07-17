@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from functools import wraps
 import logging
 from decimal import Decimal
+import math
 import time
 from typing import Literal
 import concurrent
@@ -102,3 +103,37 @@ def skip_if_running(f):
 
 def short_txid(txid: str, len=4) -> str:
     return f"{txid[:len]}..{txid[-len:]}"
+
+
+def has_free_bw(account, tx_bw):
+    acc_res = ConnectionManager.client().get_account_resource(account)
+    daily_bw = acc_res["freeNetLimit"] - acc_res.get("freeNetUsed", 0)
+    staked_bw = acc_res["NetLimit"] - acc_res.get("NetUsed", 0)
+    logger.info(f"Account {account} has {staked_bw=} {daily_bw=}")
+    if staked_bw < tx_bw:
+        if daily_bw < tx_bw:
+            return False
+        else:
+            logger.info(f"Account {account} will use daily bandwith")
+    else:
+        logger.info(f"Account {account} will use bandwith obtained from staking")
+    return True
+
+
+def est_vote_tx_bw_cons(num_of_votes):
+    return math.ceil(244 + (num_of_votes * 30))
+
+
+def estimate_bw_by_raw_data_hex(raw_data_hex: str):
+    # https://developers.tron.network/docs/faq#5-how-to-calculate-the-bandwidth-and-energy-consumed-when-callingdeploying-a-contract
+    DATA_HEX_PROTOBUF_EXTRA = 3
+    MAX_RESULT_SIZE_IN_TX = 64
+    A_SIGNATURE = 67
+    MARGIN = 10
+    return int(
+        len(raw_data_hex) / 2
+        + DATA_HEX_PROTOBUF_EXTRA
+        + MAX_RESULT_SIZE_IN_TX
+        + A_SIGNATURE
+        + MARGIN
+    )

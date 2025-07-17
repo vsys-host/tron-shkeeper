@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Dict, List
 
 from celery.schedules import crontab
+from pydantic import TypeAdapter
 from tronpy.keys import PrivateKey
 from tronpy.tron import current_timestamp
 from tronpy.abi import trx_abi
@@ -23,7 +24,7 @@ from . import celery
 from .config import config
 from .db import query_db, query_db2
 from .wallet import Wallet
-from .utils import skip_if_running
+from .utils import est_vote_tx_bw_cons, has_free_bw, skip_if_running
 from .connection_manager import ConnectionManager
 from .logging import logger
 from .wallet_encryption import wallet_encryption
@@ -181,19 +182,6 @@ def transfer_trc20_from(onetime_publ_key, symbol):
             f"Initiating TRC20 tokens transfer from ONETIME={onetime_publ_key} to MAIN={main_publ_key} in ENERGY DELEGATION MODE"
         )
 
-        logger.info("Check main account bandwidth")
-        main_acc_res = tron_client.get_account_resource(main_publ_key)
-        free_bandwidth_available = main_acc_res["freeNetLimit"] - main_acc_res.get(
-            "freeNetUsed", 0
-        )
-        staked_bandwidth_available = main_acc_res["NetLimit"] - main_acc_res.get(
-            "NetUsed", 0
-        )
-        logger.info(
-            f"Main account: {staked_bandwidth_available=} {free_bandwidth_available=}"
-        )
-        logger.debug(f"{main_acc_res=}")
-
         need_bw = (
             config.BANDWIDTH_PER_DELEGE_CALL
             + config.BANDWIDTH_PER_UNDELEGATE_CALL
@@ -201,29 +189,18 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         )
         logger.info(f"Estimated bandwidth requirement: {need_bw}")
 
-        if staked_bandwidth_available < need_bw:
-            logger.info(
-                f"Not enough staked bandwidth. Has: {staked_bandwidth_available} Need: {need_bw}"
-            )
-            if free_bandwidth_available < need_bw:
-                logger.info(
-                    f"Not enough free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
-                )
-                if config.ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH:
-                    logger.info("Burning TRX for bandwidth.")
-                else:
-                    logger.warning(
-                        "Main account has not enough staked or free bandwidth to procced. Terminating transfer."
-                    )
-                    return
-            else:
-                logger.info(
-                    f"Using free bandwidth. Has: {free_bandwidth_available} Need: {need_bw}"
-                )
+        logger.info("Check main account bandwidth")
+        if has_free_bw(main_publ_key, need_bw):
+            logger.info("Using free bandwidth")
         else:
-            logger.info(
-                f"Using staked bandwidth. Has: {staked_bandwidth_available} Need: {need_bw}"
-            )
+            logger.info("Not enough free bandwidth")
+            if config.ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH:
+                logger.info("Burning TRX for bandwidth")
+            else:
+                logger.warning(
+                    "Burning TRX for bandwidth is not allowed. Terminating transfer."
+                )
+                return
 
         try:
             onetime_address_resources = tron_client.get_account_resource(
@@ -681,8 +658,100 @@ def scan_accounts(self, *args, **kwargs):
     return stats
 
 
+@celery.task(bind=True)
+@skip_if_running
+def vote_for_sr(self, *args, **kwargs):
+    logger.info("Checking voting config")
+    if not config.SR_VOTES:
+        logger.warning("Voting enabled but no config given. Terminating voting task.")
+        return
+    logger.info(f"Voting config is OK: {config.SR_VOTES}")
+    tron_client = ConnectionManager.client()
+    main_acc_keys = query_db2(
+        'select * from keys where type = "fee_deposit" ', one=True
+    )
+    main_priv_key = PrivateKey(
+        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
+    )
+    main_publ_key = main_acc_keys["public"]
+    logger.info(f"Checking current votes for {main_publ_key}")
+    acc_info = tron_client.get_account(main_publ_key)
+    logger.info(acc_info)
+
+    if "votes" in acc_info:
+        from .schemas import SrVote
+
+        ta = TypeAdapter(List[SrVote])
+        votes = ta.validate_python(acc_info["votes"])
+
+        if config.SR_VOTES == votes:
+            logger.info("Already voted according to config. Terminating voting task.")
+            return
+        else:
+            logger.info("Voting config doesn't match previous voting.")
+            logger.info("Revoting.")
+    else:
+        logger.info("Account hasn't voted yet.")
+        logger.info("Voting.")
+
+    logger.info(f"Check {main_publ_key} bandwidth")
+    need_bw = est_vote_tx_bw_cons(len(config.SR_VOTES))
+    logger.info(
+        f"Estimated bandwith requirement to vote "
+        f"for {len(config.SR_VOTES)} SRs is: {need_bw}"
+    )
+    if has_free_bw(main_publ_key, need_bw):
+        logger.info("Using free bandwidth")
+    else:
+        logger.info("Available free bandwith points is not enough to vote")
+        if config.SR_VOTING_ALLOW_BURN_TRX:
+            logger.info("Voting will burn TRX for bandwidth points")
+        else:
+            logger.warning(
+                "Burning TRX for bandwidth points is not allowed. Terminating voting."
+            )
+            return
+
+    unsigned_tx = tron_client.trx.vote_witness(
+        main_publ_key,
+        *[(v.vote_address, v.vote_count) for v in config.SR_VOTES],
+    ).build()
+    signed_tx = unsigned_tx.sign(main_priv_key)
+    tx_info = signed_tx.broadcast().wait()
+
+    logger.info(f"Voting complete. TX details: {tx_info}")
+
+
+@celery.task(bind=True)
+@skip_if_running
+def claim_reward(self, *args, **kwargs):
+    # TODO: implement automatic reward claims
+    # logger.info("Checking voting config")
+    # if not config.SR_VOTES:
+    #     logger.warning("Voting enabled but no config given. Terminating voting task.")
+    #     return
+    # logger.info(f"Voting config is OK: {config.SR_VOTES}")
+    # tron_client = ConnectionManager.client()
+    # main_acc_keys = query_db2(
+    #     'select * from keys where type = "fee_deposit" ', one=True
+    # )
+    # main_priv_key = PrivateKey(
+    #     bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
+    # )
+    # main_publ_key = main_acc_keys["public"]
+    # logger.info(f"Checking current votes for {main_publ_key}")
+    # acc_info = tron_client.get_account(main_publ_key)
+    # # "allowance": 16678,
+    # # "latest_withdraw_time": 1752679503000,
+    # # once every 24 h
+    pass
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
+    if config.SR_VOTING:
+        vote_for_sr.delay()
+
     if config.EXTERNAL_DRAIN_CONFIG:
         from .custom.aml.tasks import sweep_accounts, recheck_transactions
 
