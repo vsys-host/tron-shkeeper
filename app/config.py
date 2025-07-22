@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     SR_VOTING: bool = False
     SR_VOTES: Json[List[SrVote]] | None = None
     SR_VOTING_ALLOW_BURN_TRX: bool = False
+    # Token customization
+    USDT_MIN_TRANSFER_THRESHOLD: Decimal | None = None
+    USDC_MIN_TRANSFER_THRESHOLD: Decimal | None = None
 
     TOKENS: List[Token] = [
         Token(
@@ -106,7 +109,14 @@ class Settings(BaseSettings):
     def get_min_transfer_threshold(self, symbol):
         for token in self.TOKENS:
             if self.TRON_NETWORK is token.network and token.symbol == symbol:
-                return token.min_transfer_threshold
+                if hasattr(self, f"{symbol}_MIN_TRANSFER_THRESHOLD") and (
+                    custom_threshold := getattr(
+                        self, f"{symbol}_MIN_TRANSFER_THRESHOLD"
+                    )
+                ):
+                    return custom_threshold
+                else:
+                    return token.min_transfer_threshold
         raise UnknownToken(f"Unknown token {symbol=}")
 
     @cache
