@@ -82,20 +82,16 @@ def skip_if_running(f):
     def wrapped(self, *args, **kwargs):
         workers = self.app.control.inspect().active()
 
-        for worker, tasks in workers.items():
-            for task in tasks:
-                if (
-                    task_name == task["name"]
-                    and tuple(args) == tuple(task["args"])
-                    and kwargs == task["kwargs"]
-                    and self.request.id != task["id"]
-                ):
-                    logger.debug(
-                        f"task {task_name} ({args}, {kwargs}) is running on {worker}, skipping"
-                    )
-
-                    return "skipped (already running)"
-        # logger.debug(f"task {task_name} ({args}, {kwargs}) is allowed to run")
+        if workers:
+            for worker, tasks in workers.items():
+                for task in tasks:
+                    if (
+                        task_name == task["name"]
+                        and tuple(args) == tuple(task["args"])
+                        and kwargs == task["kwargs"]
+                        and self.request.id != task["id"]
+                    ):
+                        return f"task {task_name} ({args}, {kwargs}) is already running on {worker}, skipping"
         return f(self, *args, **kwargs)
 
     return wrapped
