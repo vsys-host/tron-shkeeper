@@ -58,3 +58,45 @@ def stake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
     return tx_info
+
+
+@staking_bp.post("/unfreeze/<int:amount>/<string:res_type>")
+def unstake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
+    main_acc_keys = query_db2(
+        'select * from keys where type = "fee_deposit" ', one=True
+    )
+    main_priv_key = PrivateKey(
+        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
+    )
+    main_publ_key = main_acc_keys["public"]
+
+    tron_client: Tron = ConnectionManager.client()
+    unsigned_tx = tron_client.trx.unfreeze_balance(
+        owner=main_publ_key,
+        resource=res_type,
+        unfreeze_balance=amount * 1_000_000,
+    ).build()
+    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx.inspect()
+    tx_info = signed_tx.broadcast().wait()
+    logger.info(tx_info)
+    return tx_info
+
+
+@staking_bp.post("/withdraw_unfreezed")
+def withdraw_unstaked_trx():
+    main_acc_keys = query_db2(
+        'select * from keys where type = "fee_deposit" ', one=True
+    )
+    main_priv_key = PrivateKey(
+        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
+    )
+    main_publ_key = main_acc_keys["public"]
+
+    tron_client: Tron = ConnectionManager.client()
+    unsigned_tx = tron_client.trx.withdraw_stake_balance(owner=main_publ_key).build()
+    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx.inspect()
+    tx_info = signed_tx.broadcast().wait()
+    logger.info(tx_info)
+    return tx_info
