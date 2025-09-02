@@ -100,3 +100,22 @@ def withdraw_unstaked_trx():
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
     return tx_info
+
+
+@staking_bp.post("/claim_voting_reward")
+def claim_voting_reward():
+    main_acc_keys = query_db2(
+        'select * from keys where type = "fee_deposit" ', one=True
+    )
+    main_priv_key = PrivateKey(
+        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
+    )
+    main_publ_key = main_acc_keys["public"]
+
+    tron_client: Tron = ConnectionManager.client()
+    unsigned_tx = tron_client.trx.withdraw_rewards(owner=main_publ_key).build()
+    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx.inspect()
+    tx_info = signed_tx.broadcast().wait()
+    logger.info(tx_info)
+    return tx_info
