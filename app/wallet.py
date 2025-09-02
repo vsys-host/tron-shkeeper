@@ -55,7 +55,7 @@ class Wallet:
     def bandwidth_of(self, address):
         res = self.client.get_account_resource(address)
         logger.debug(f"Resources of {address}: {res}")
-        bandwidth = res["freeNetLimit"] - res.get("freeNetUsed", 0)
+        bandwidth = res.get("freeNetLimit", 0) - res.get("freeNetUsed", 0)
         return Decimal(bandwidth)
 
     def transfer(self, dst, amount, src_address: TronAddress = None):

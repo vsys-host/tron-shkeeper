@@ -103,8 +103,8 @@ def short_txid(txid: str, len=4) -> str:
 
 def has_free_bw(account, tx_bw):
     acc_res = ConnectionManager.client().get_account_resource(account)
-    daily_bw = acc_res["freeNetLimit"] - acc_res.get("freeNetUsed", 0)
-    staked_bw = acc_res["NetLimit"] - acc_res.get("NetUsed", 0)
+    daily_bw = acc_res.get("freeNetLimit", 0) - acc_res.get("freeNetUsed", 0)
+    staked_bw = acc_res.get("NetLimit", 0) - acc_res.get("NetUsed", 0)
     logger.info(f"Account {account} has {staked_bw=} {daily_bw=}")
     if staked_bw < tx_bw:
         if daily_bw < tx_bw:
