@@ -30,16 +30,16 @@ class Settings(BaseSettings):
     API_PASSWORD: str = Field("shkeeper", alias="BTC_PASSWORD")
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
     SHKEEPER_HOST: str = "localhost:5000"
-    INTERNAL_TX_FEE: Decimal = "40"
-    TX_FEE: Decimal = "40"  # includes bandwidth, energy and activation fees
-    TX_FEE_LIMIT: Decimal = (
-        "50"  # max TRX tx can burn for resources (energy, bandwidth)
-    )
+    INTERNAL_TX_FEE: Decimal = Decimal("40")
+    TX_FEE: Decimal = Decimal("40")  # includes bandwidth, energy and activation fees
+    TX_FEE_LIMIT: Decimal = Decimal(
+        "50"
+    )  # max TRX tx can burn for resources (energy, bandwidth)
     BANDWIDTH_PER_TRX_TRANSFER: int = 270
     BANDWIDTH_PER_DELEGE_CALL: int = 278
     BANDWIDTH_PER_UNDELEGATE_CALL: int = 280
-    TRX_PER_BANDWIDTH_UNIT: Decimal = "0.001"
-    TRX_MIN_TRANSFER_THRESHOLD: Decimal = "0.5"
+    TRX_PER_BANDWIDTH_UNIT: Decimal = Decimal("0.001")
+    TRX_MIN_TRANSFER_THRESHOLD: Decimal = Decimal("0.5")
     # Block scanner
     BLOCK_SCANNER_STATS_LOG_PERIOD: int = 300
     BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE: int = 1
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH: bool = False
     ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT: bool = False
     ENERGY_DELEGATION_MODE_ALLOW_ADDITIONAL_ENERGY_DELEGATION: bool = False
-    ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR: Decimal = "1.5"
+    ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR: Decimal = Decimal("1.5")
     ENERGY_DELEGATION_MODE_SEPARATE_BALANCE_AND_ENERGY_ACCOUNTS: bool = True
     ENERGY_DELEGATION_MODE_ENERGY_ACCOUNT_PUB_KEY: str | None = None
     # Voting
