@@ -21,11 +21,19 @@ import tronpy.exceptions
 import requests
 from sqlmodel import Session, select
 
+from app.schemas import KeyType
+
 from . import celery
 from .config import config
 from .db import query_db, query_db2
 from .wallet import Wallet
-from .utils import est_vote_tx_bw_cons, has_free_bw, skip_if_running
+from .utils import (
+    est_vote_tx_bw_cons,
+    get_energy_delegator,
+    get_key,
+    has_free_bw,
+    skip_if_running,
+)
 from .connection_manager import ConnectionManager
 from .logging import logger
 from .wallet_encryption import wallet_encryption
@@ -78,7 +86,7 @@ def payout(steps, symbol):
 
 
 @celery.task()
-def transfer_trc20_from(onetime_publ_key, symbol):
+def transfer_trc20_from(onetime_acc, symbol):
     """
     Transfers TRC20 from onetime to main account
     """
@@ -88,13 +96,11 @@ def transfer_trc20_from(onetime_publ_key, symbol):
     contract_address = config.get_contract_address(symbol)
     contract = tron_client.get_contract(contract_address)
     precision = contract.functions.decimals()
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
+
+    main_priv_key, main_publ_key = get_key(KeyType.fee_deposit)
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    onetime_priv_key, onetime_publ_key = get_key(KeyType.onetime, pub=onetime_acc)
+
     token_balance = contract.functions.balanceOf(onetime_publ_key)
 
     tx_trx_res = None
@@ -107,14 +113,14 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         return int(trx * 1_000_000)
 
     def delegate_energy(sun_to_delegate):
-        logger.info("Check if main account can delegate energy")
+        logger.info("Check if energy delegator account can delegate energy")
         result = tron_client.provider.make_request(
             "wallet/getcandelegatedmaxsize",
-            {"owner_address": main_publ_key, "type": 1, "visible": True},
+            {"owner_address": energy_delegator_pub, "type": 1, "visible": True},
         )
         if "max_size" not in result:
             raise Exception(
-                "Main account has no delegatable energy. Terminating transfer."
+                "Energy delegator has no delegatable energy. Terminating transfer."
             )
         else:
             delegetable_sun = result["max_size"]
@@ -123,20 +129,20 @@ def transfer_trc20_from(onetime_publ_key, symbol):
 
             if delegetable_sun < sun_to_delegate:
                 raise Exception(
-                    "Main account has not enough energy. Terminating transfer."
+                    "Energy delegator has not enough energy. Terminating transfer."
                 )
             else:
-                logger.info("Main account has enough energy")
+                logger.info("Energy delegator has enough energy")
 
                 logger.info("Delegating energy to onetime account")
 
                 unsigned_tx = tron_client.trx.delegate_resource(
-                    owner=main_publ_key,
+                    owner=energy_delegator_pub,
                     receiver=onetime_publ_key,
                     balance=sun_to_delegate,
                     resource="ENERGY",
                 ).build()
-                signed_tx = unsigned_tx.sign(main_priv_key)
+                signed_tx = unsigned_tx.sign(energy_delegator_priv)
                 logger.info(f"TX json size: {len(json.dumps(signed_tx._raw_data))}")
 
                 delegate_tx_info = signed_tx.broadcast().wait()
@@ -190,8 +196,8 @@ def transfer_trc20_from(onetime_publ_key, symbol):
         )
         logger.info(f"Estimated bandwidth requirement: {need_bw}")
 
-        logger.info("Check main account bandwidth")
-        if has_free_bw(main_publ_key, need_bw):
+        logger.info("Check energy delegator bandwidth")
+        if has_free_bw(energy_delegator_pub, need_bw):
             logger.info("Using free bandwidth")
         else:
             logger.info("Not enough free bandwidth")
@@ -224,6 +230,19 @@ def transfer_trc20_from(onetime_publ_key, symbol):
                 return
             else:
                 logger.info("Main account TRX balance OK.")
+
+            logger.info("Check main account free bandwidth")
+            if has_free_bw(main_publ_key, config.BANDWIDTH_PER_TRX_TRANSFER):
+                logger.info("Using main account free bandwidth")
+            else:
+                logger.info("Main account has not enough free bandwidth")
+                if config.ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH:
+                    logger.info("Burning TRX for bandwidth")
+                else:
+                    logger.warning(
+                        "Burning TRX for bandwidth is not allowed. Terminating transfer."
+                    )
+                    return
 
             logger.info(f"Activating {onetime_publ_key} by sending 0.1 TRX")
             tx_trx = tron_client.trx.transfer(
@@ -350,18 +369,6 @@ def transfer_trc20_from(onetime_publ_key, symbol):
             f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}"
         )
 
-    onetime_priv_key = PrivateKey(
-        bytes.fromhex(
-            wallet_encryption.decrypt(
-                query_db2(
-                    'select * from keys where type = "onetime" and public = ?',
-                    (onetime_publ_key,),
-                    one=True,
-                )["private"]
-            )
-        )
-    )
-
     tx_token = contract.functions.transfer(main_publ_key, int(token_balance))
     tx_token = tx_token.with_owner(onetime_publ_key)
     tx_token = tx_token.fee_limit(int(config.TX_FEE_LIMIT * 1_000_000))
@@ -388,16 +395,10 @@ def undelegate_energy(receiver):
 
     tron_client = ConnectionManager.client()
 
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
 
     result = tron_client.get_delegated_resource_v2(
-        fromAddr=main_publ_key, toAddr=receiver
+        fromAddr=energy_delegator_pub, toAddr=receiver
     )
     if "delegatedResource" not in result:
         logger.info(
@@ -408,7 +409,7 @@ def undelegate_energy(receiver):
     for resource in result["delegatedResource"]:
         if (
             "frozen_balance_for_energy" in resource
-            and resource["from"] == main_publ_key
+            and resource["from"] == energy_delegator_pub
         ):
             frozen_balance_for_energy += resource["frozen_balance_for_energy"]
     if not frozen_balance_for_energy:
@@ -423,12 +424,12 @@ def undelegate_energy(receiver):
     )
 
     unsigned_tx = tron_client.trx.undelegate_resource(
-        owner=main_publ_key,
+        owner=energy_delegator_pub,
         receiver=receiver,
         balance=frozen_balance_for_energy,
         resource="ENERGY",
     ).build()
-    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
     undelegate_tx_info = signed_tx.broadcast().wait()
 
     logger.info(
