@@ -10,6 +10,7 @@ import tronpy
 class KeyType(str, Enum):
     fee_deposit = "fee_deposit"
     onetime = "onetime"
+    energy = "energy_delegation"
 
 
 class TronNetwork(str, Enum):
