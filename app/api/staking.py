@@ -94,3 +94,16 @@ def claim_voting_reward():
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
     return tx_info
+
+
+@staking_bp.post("/grant_permissions")
+def grant_permissions():
+    """
+    Allows the fee_deposit account to perform staking and energy
+    delegation transactions on behalf of the staking account.
+
+    Prerequisites: The staking account must be active and have
+    at least 100 TRX available to cover
+    the AccountPermissionUpdate fee (see network parameter #22).
+    """
+    pass
