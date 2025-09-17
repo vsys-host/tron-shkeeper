@@ -1,5 +1,7 @@
 from typing import Literal
 
+from app.utils import get_energy_delegator
+
 from . import staking_bp
 from ..db import query_db2
 from ..connection_manager import ConnectionManager
@@ -14,9 +16,7 @@ from tronpy.keys import PrivateKey
 @staking_bp.get("/<address>")
 def get_resources(address):
     if not address:
-        address = query_db2('select * from keys where type = "fee_deposit" ', one=True)[
-            "public"
-        ]
+        _, address = get_energy_delegator()
     tron_client: Tron = ConnectionManager.client()
     account_info = tron_client.get_account(address)
 
@@ -39,21 +39,15 @@ def get_resources(address):
 
 @staking_bp.post("/freeze/<int:amount>/<string:res_type>")
 def stake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
 
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.freeze_balance(
-        owner=main_publ_key,
+        owner=energy_delegator_pub,
         amount=amount * 1_000_000,
         resource=res_type,
     ).build()
-    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
     signed_tx.inspect()
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
@@ -62,21 +56,14 @@ def stake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
 
 @staking_bp.post("/unfreeze/<int:amount>/<string:res_type>")
 def unstake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
-
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.unfreeze_balance(
-        owner=main_publ_key,
+        owner=energy_delegator_pub,
         resource=res_type,
         unfreeze_balance=amount * 1_000_000,
     ).build()
-    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
     signed_tx.inspect()
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
@@ -85,17 +72,12 @@ def unstake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
 
 @staking_bp.post("/withdraw_unfreezed")
 def withdraw_unstaked_trx():
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
-
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
     tron_client: Tron = ConnectionManager.client()
-    unsigned_tx = tron_client.trx.withdraw_stake_balance(owner=main_publ_key).build()
-    signed_tx = unsigned_tx.sign(main_priv_key)
+    unsigned_tx = tron_client.trx.withdraw_stake_balance(
+        owner=energy_delegator_pub
+    ).build()
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
     signed_tx.inspect()
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
@@ -104,17 +86,10 @@ def withdraw_unstaked_trx():
 
 @staking_bp.post("/claim_voting_reward")
 def claim_voting_reward():
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
-
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
     tron_client: Tron = ConnectionManager.client()
-    unsigned_tx = tron_client.trx.withdraw_rewards(owner=main_publ_key).build()
-    signed_tx = unsigned_tx.sign(main_priv_key)
+    unsigned_tx = tron_client.trx.withdraw_rewards(owner=energy_delegator_pub).build()
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
     signed_tx.inspect()
     tx_info = signed_tx.broadcast().wait()
     logger.info(tx_info)
