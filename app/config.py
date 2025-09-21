@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     BANDWIDTH_PER_TRX_TRANSFER: int = 270
     BANDWIDTH_PER_DELEGE_CALL: int = 278
     BANDWIDTH_PER_UNDELEGATE_CALL: int = 280
+    BANDWIDTH_PER_TRC20_TRANSFER_CALL: int = 346
     TRX_PER_BANDWIDTH_UNIT: Decimal = Decimal("0.001")
     TRX_MIN_TRANSFER_THRESHOLD: Decimal = Decimal("0.5")
     # Block scanner
