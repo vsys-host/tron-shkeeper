@@ -369,6 +369,12 @@ def transfer_trc20_from(onetime_acc, symbol):
             f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}"
         )
 
+    # Check available bandwidth before transfer trc20 tokens
+    # from one_time to fee_deposit account
+    if not has_free_bw(onetime_publ_key, config.BANDWIDTH_PER_TRC20_TRANSFER_CALL):
+        logger.warning("One-time account has no bandwidth. Terminating transfer.")
+        return
+
     tx_token = contract.functions.transfer(main_publ_key, int(token_balance))
     tx_token = tx_token.with_owner(onetime_publ_key)
     tx_token = tx_token.fee_limit(int(config.TX_FEE_LIMIT * 1_000_000))
