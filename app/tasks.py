@@ -214,7 +214,7 @@ def transfer_trc20_from(onetime_acc, symbol):
                 onetime_publ_key
             )
             logger.info(
-                f"Onetime {onetime_publ_key} is already on chain, skipping actication. Resource details {onetime_address_resources=}"
+                f"Onetime {onetime_publ_key} is already on chain, skipping activation. Resource details {onetime_address_resources=}"
             )
         except tronpy.exceptions.AddressNotFound:
             TRX_FOR_ACTIVATION = "1.1"
