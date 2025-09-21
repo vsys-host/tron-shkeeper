@@ -96,6 +96,46 @@ def claim_voting_reward():
     return tx_info
 
 
+@staking_bp.post("/delegate/<string:address>/<int:amount>/<string:res_type>")
+def delegate(address: str, amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    tron_client: Tron = ConnectionManager.client()
+    sun = int(amount * 1_000_000)
+    unsigned_tx = tron_client.trx.delegate_resource(
+        owner=energy_delegator_pub,
+        receiver=address,
+        balance=sun,
+        resource=res_type,
+    ).build()
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
+    tx_info = signed_tx.broadcast().wait()
+    logger.info(
+        f"Delegated {amount} staked TRX of {res_type} to address {address}. TXID: {unsigned_tx.txid}"
+    )
+    logger.info(tx_info)
+    return tx_info
+
+
+@staking_bp.post("/undelegate/<string:address>/<int:amount>/<string:res_type>")
+def undelegate(address: str, amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    tron_client: Tron = ConnectionManager.client()
+    sun = int(amount * 1_000_000)
+    unsigned_tx = tron_client.trx.undelegate_resource(
+        owner=energy_delegator_pub,
+        receiver=address,
+        balance=sun,
+        resource=res_type,
+    ).build()
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
+    tx_info = signed_tx.broadcast().wait()
+    logger.info(
+        f"Undelegated {amount} staked TRX of {res_type} from address {address}. TXID: {unsigned_tx.txid}"
+    )
+    logger.info(tx_info)
+    return tx_info
+
+
 @staking_bp.post("/grant_permissions")
 def grant_permissions():
     """
