@@ -96,6 +96,20 @@ def claim_voting_reward():
     return tx_info
 
 
+@staking_bp.post("/withdraw_stake_balance")
+def withdraw_stake_balance():
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    tron_client: Tron = ConnectionManager.client()
+    unsigned_tx = tron_client.trx.withdraw_stake_balance(
+        owner=energy_delegator_pub
+    ).build()
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
+    signed_tx.inspect()
+    tx_info = signed_tx.broadcast().wait()
+    logger.info(tx_info)
+    return tx_info
+
+
 @staking_bp.post("/delegate/<string:address>/<int:amount>/<string:res_type>")
 def delegate(address: str, amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
     energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
