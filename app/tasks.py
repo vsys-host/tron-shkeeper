@@ -675,15 +675,11 @@ def vote_for_sr(self, *args, **kwargs):
         return
     logger.info(f"Voting config is OK: {config.SR_VOTES}")
     tron_client = ConnectionManager.client()
-    main_acc_keys = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )
-    main_priv_key = PrivateKey(
-        bytes.fromhex(wallet_encryption.decrypt(main_acc_keys["private"]))
-    )
-    main_publ_key = main_acc_keys["public"]
-    logger.info(f"Checking current votes for {main_publ_key}")
-    acc_info = tron_client.get_account(main_publ_key)
+
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+
+    logger.info(f"Checking current votes for {energy_delegator_pub}")
+    acc_info = tron_client.get_account(energy_delegator_pub)
 
     if "votes" in acc_info:
         from .schemas import SrVote
@@ -701,13 +697,13 @@ def vote_for_sr(self, *args, **kwargs):
         logger.info("Account hasn't voted yet.")
         logger.info("Voting.")
 
-    logger.info(f"Check {main_publ_key} bandwidth")
+    logger.info(f"Check {energy_delegator_pub} bandwidth")
     need_bw = est_vote_tx_bw_cons(len(config.SR_VOTES))
     logger.info(
         f"Estimated bandwith requirement to vote "
         f"for {len(config.SR_VOTES)} SRs is: {need_bw}"
     )
-    if has_free_bw(main_publ_key, need_bw):
+    if has_free_bw(energy_delegator_pub, need_bw):
         logger.info("Using free bandwidth")
     else:
         logger.info("Available free bandwith points is not enough to vote")
@@ -720,10 +716,10 @@ def vote_for_sr(self, *args, **kwargs):
             return
 
     unsigned_tx = tron_client.trx.vote_witness(
-        main_publ_key,
+        energy_delegator_pub,
         *[(v.vote_address, v.vote_count) for v in config.SR_VOTES],
     ).build()
-    signed_tx = unsigned_tx.sign(main_priv_key)
+    signed_tx = unsigned_tx.sign(energy_delegator_priv)
     tx_info = signed_tx.broadcast().wait()
 
     logger.info(f"Voting complete. TX details: {tx_info}")
