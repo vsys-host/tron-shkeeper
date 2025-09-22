@@ -232,7 +232,9 @@ def transfer_trc20_from(onetime_acc, symbol):
                 logger.info("Main account TRX balance OK.")
 
             logger.info("Check main account free bandwidth")
-            if has_free_bw(main_publ_key, config.BANDWIDTH_PER_TRX_TRANSFER):
+            if has_free_bw(
+                main_publ_key, config.BANDWIDTH_PER_TRX_TRANSFER, use_only_staked=True
+            ):
                 logger.info("Using main account free bandwidth")
             else:
                 logger.info("Main account has not enough free bandwidth")
