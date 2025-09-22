@@ -119,18 +119,21 @@ def transfer_trc20_from(onetime_acc, symbol):
             {"owner_address": energy_delegator_pub, "type": 1, "visible": True},
         )
         if "max_size" not in result:
-            raise Exception(
+            logger.warning(
                 "Energy delegator has no delegatable energy. Terminating transfer."
             )
+            return False
+
         else:
             delegetable_sun = result["max_size"]
 
             logger.info(f"{delegetable_sun=} {sun_to_delegate=}")
 
             if delegetable_sun < sun_to_delegate:
-                raise Exception(
+                logger.warning(
                     "Energy delegator has not enough energy. Terminating transfer."
                 )
+                return False
             else:
                 logger.info("Energy delegator has enough energy")
 
@@ -165,11 +168,13 @@ def transfer_trc20_from(onetime_acc, symbol):
                     f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=}"
                 )
                 if onetime_energy_available < energy_needed:
-                    raise Exception(
+                    logger.warning(
                         "Onetime account has not enough energy after delegation. Terminating transfer."
                     )
+                    return False
                 else:
                     logger.info("Energy successfuly delegated")
+                    return True
 
     logger.info(f"Check ONETIME={onetime_publ_key} {symbol} balance")
     min_threshold = config.get_min_transfer_threshold(symbol)
@@ -339,7 +344,8 @@ def transfer_trc20_from(onetime_acc, symbol):
             logger.info(
                 f"Delegating {sun_needed / 1_000_000} TRX to {onetime_publ_key}"
             )
-            delegate_energy(sun_needed)
+            if not delegate_energy(sun_needed):
+                return
     else:
         logger.info(
             "Transferring TRC20 tokens from onetime to main in TRX burning mode"
