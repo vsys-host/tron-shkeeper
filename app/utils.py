@@ -163,7 +163,7 @@ def has_free_bw(account, tx_bw, use_only_staked=False):
     logger.info(f"Account {account} has {staked_bw=} {daily_bw=}")
     if staked_bw < tx_bw:
         if use_only_staked:
-            logger.info("use_only_staked=True, skipping fee bw check")
+            logger.info("use_only_staked=True, skipping free(daily) bandwidth check")
             return False
         if daily_bw < tx_bw:
             return False
