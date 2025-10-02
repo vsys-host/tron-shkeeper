@@ -548,18 +548,13 @@ def scan_accounts(self, *args, **kwargs):
             "exception_num": 0,
         }
 
-        @cache
-        def precision_of(symbol):
-            return (
-                ConnectionManager.client()
-                .get_contract(config.get_contract_address(symbol))
-                .functions.decimals()
-            )
-
         accounts = [
             row["public"]
             for row in query_db('SELECT public FROM keys WHERE type = "onetime"')
         ]
+
+        balances_to_collect = {"trx": [], "trc20": []}
+
         for index, account in enumerate(accounts, start=1):
             try:
                 #
@@ -607,12 +602,9 @@ def scan_accounts(self, *args, **kwargs):
                         session.commit()
 
                     if trc20_balance > 0:
-                        if not is_task_running(
-                            self,
-                            "app.tasks.transfer_trc20_from",
-                            args=[account, symbol],
-                        ):
-                            transfer_trc20_from(account, symbol)
+                        balances_to_collect["trc20"].append(
+                            [account, symbol, trc20_balance]
+                        )
 
                 #
                 # TRX
@@ -655,13 +647,7 @@ def scan_accounts(self, *args, **kwargs):
                     session.commit()
 
                 if trx_balance > 0:
-                    if not is_task_running(
-                        self, "app.tasks.transfer_trc20_from", args=[account]
-                    ):
-                        # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
-                        # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
-                        # so there will be no TRX to burn for sure.
-                        transfer_trx_from(account)
+                    balances_to_collect["trx"].append([account, trx_balance])
 
                 logger.debug(
                     f"Scanned {index} of {len(accounts)} accounts, found: "
@@ -671,6 +657,30 @@ def scan_accounts(self, *args, **kwargs):
             except Exception as e:
                 logger.exception(f"{account} scan error: {e}")
                 stats["exception_num"] += 1
+
+        # Sort trc20 balances by balance in descending order
+        balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
+        logger.info(balances_to_collect["trc20"])
+        for account, symbol, trc20_balance in balances_to_collect["trc20"]:
+            if not is_task_running(
+                self,
+                "app.tasks.transfer_trc20_from",
+                args=[account, symbol],
+            ):
+                transfer_trc20_from(account, symbol)
+
+        # Sort trx balances by balance in descending order
+        balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
+        logger.info(balances_to_collect["trx"])
+        for account, trx_balance in balances_to_collect["trx"]:
+            if not is_task_running(
+                self, "app.tasks.transfer_trc20_from", args=[account]
+            ):
+                # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
+                # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
+                # so there will be no TRX to burn for sure.
+                transfer_trx_from(account)
+
     return stats
 
 
