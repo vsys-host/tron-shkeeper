@@ -661,6 +661,20 @@ def scan_accounts(self, *args, **kwargs):
         # Sort trc20 balances by balance in descending order
         balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
         logger.info("TRC20 queue length: %d" % len(balances_to_collect["trc20"]))
+        # Log histogram of TRC20 balances
+        bins = [5, 50, 100, 300, 500, 1000, 2000]
+        histogram = collections.Counter()
+        for _, _, balance in balances_to_collect["trc20"]:
+            for b in bins:
+                if balance < b:
+                    histogram[f"<{b}"] += 1
+                    break
+            else:
+                histogram[">=2000"] += 1
+        logger.info(
+            "TRC20 balances histogram: "
+            + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
+        )
         for account, symbol, trc20_balance in balances_to_collect["trc20"]:
             if not is_task_running(
                 self,
