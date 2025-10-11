@@ -660,7 +660,7 @@ def scan_accounts(self, *args, **kwargs):
 
         # Sort trc20 balances by balance in descending order
         balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
-        logger.info(balances_to_collect["trc20"])
+        logger.info("TRC20 queue length: %d" % len(balances_to_collect["trc20"]))
         for account, symbol, trc20_balance in balances_to_collect["trc20"]:
             if not is_task_running(
                 self,
@@ -671,7 +671,7 @@ def scan_accounts(self, *args, **kwargs):
 
         # Sort trx balances by balance in descending order
         balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
-        logger.info(balances_to_collect["trx"])
+        # logger.info(balances_to_collect["trx"])
         for account, trx_balance in balances_to_collect["trx"]:
             if not is_task_running(
                 self, "app.tasks.transfer_trc20_from", args=[account]
