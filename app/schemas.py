@@ -3,17 +3,14 @@ from enum import Enum
 from functools import cache
 from typing import Annotated, Any, List, Literal
 
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    Json,
-)
+from pydantic import AfterValidator, BaseModel, PositiveInt
 import tronpy
 
 
 class KeyType(str, Enum):
     fee_deposit = "fee_deposit"
     onetime = "onetime"
+    energy = "energy_delegation"
 
 
 class TronNetwork(str, Enum):
@@ -68,3 +65,11 @@ class Token(BaseModel):
     min_transfer_threshold: Decimal
     network: TronNetwork
     decimal: int
+
+
+class SrVote(BaseModel):
+    vote_address: TronAddress
+    vote_count: PositiveInt
+
+
+SrVoteList = List[SrVote]

@@ -17,3 +17,5 @@ build/
 celerybeat-schedule
 data/
 .git
+.vscode
+*.http

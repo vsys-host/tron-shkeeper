@@ -25,7 +25,6 @@ class EncryptionModeMismatch(SystemExit):
 
 
 class wallet_encryption:
-
     encryption = None
     key = None
 
@@ -71,10 +70,17 @@ class wallet_encryption:
             ["TRX"] + [token.symbol for token in config.get_tokens()]
         ):
             try:
-                res = requests.get(
-                    f"http://{config.SHKEEPER_HOST}/api/v1/{symbol}/decrypt",
-                    headers={"X-Shkeeper-Backend-Key": config.SHKEEPER_BACKEND_KEY},
-                ).json()
+                if config.DEVMODE_ENCRYPTION_PW:
+                    res = {
+                        "persistent_status": "enabled",
+                        "runtime_status": "success",
+                        "key": config.DEVMODE_ENCRYPTION_PW,
+                    }
+                else:
+                    res = requests.get(
+                        f"http://{config.SHKEEPER_HOST}/api/v1/{symbol}/decrypt",
+                        headers={"X-Shkeeper-Backend-Key": config.SHKEEPER_BACKEND_KEY},
+                    ).json()
 
                 if res["persistent_status"] == "disabled":
                     cls.encryption = False

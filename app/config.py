@@ -6,7 +6,7 @@ from pydantic import Field, Json, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .custom.aml.schemas import ExternalDrain
-from .schemas import TronFullnode, TronNetwork, Token, TronSymbol
+from .schemas import TronFullnode, TronNetwork, Token, TronSymbol, SrVote
 from .exceptions import UnknownToken
 
 
@@ -30,14 +30,17 @@ class Settings(BaseSettings):
     API_PASSWORD: str = Field("shkeeper", alias="BTC_PASSWORD")
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
     SHKEEPER_HOST: str = "localhost:5000"
-    INTERNAL_TX_FEE: Decimal = "40"
-    TX_FEE: Decimal = "40"  # includes bandwidth, energy and activation fees
-    TX_FEE_LIMIT: Decimal = (
-        "50"  # max TRX tx can burn for resources (energy, bandwidth)
-    )
+    INTERNAL_TX_FEE: Decimal = Decimal("40")
+    TX_FEE: Decimal = Decimal("40")  # includes bandwidth, energy and activation fees
+    TX_FEE_LIMIT: Decimal = Decimal(
+        "50"
+    )  # max TRX tx can burn for resources (energy, bandwidth)
     BANDWIDTH_PER_TRX_TRANSFER: int = 270
-    TRX_PER_BANDWIDTH_UNIT: Decimal = "0.001"
-    TRX_MIN_TRANSFER_THRESHOLD: Decimal = "0.5"
+    BANDWIDTH_PER_DELEGE_CALL: int = 278
+    BANDWIDTH_PER_UNDELEGATE_CALL: int = 280
+    BANDWIDTH_PER_TRC20_TRANSFER_CALL: int = 346
+    TRX_PER_BANDWIDTH_UNIT: Decimal = Decimal("0.001")
+    TRX_MIN_TRANSFER_THRESHOLD: Decimal = Decimal("0.5")
     # Block scanner
     BLOCK_SCANNER_STATS_LOG_PERIOD: int = 300
     BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE: int = 1
@@ -48,12 +51,31 @@ class Settings(BaseSettings):
     MULTISERVER_REFRESH_BEST_SERVER_PERIOD: int = 20
     # Account encryption
     FORCE_WALLET_ENCRYPTION: bool = False
+    # DEV MODE
+    DEVMODE_ENCRYPTION_PW: str | None = None
+    DEVMODE_SKIP_NOTIFICATIONS: bool = False
+    DEVMODE_CELERY_NODELAY: bool = False
     # AML
     EXTERNAL_DRAIN_CONFIG: ExternalDrain | None = None
     DELAY_AFTER_FEE_TRANSFER: float = 60
     AML_RESULT_UPDATE_PERIOD: int = 120
     AML_SWEEP_ACCOUNTS_PERIOD: int = 3600
     AML_WAIT_BEFORE_API_CALL: int = 320
+    # Resource delegation
+    ENERGY_DELEGATION_MODE: bool = False
+    ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH: bool = False
+    ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT: bool = False
+    ENERGY_DELEGATION_MODE_ALLOW_ADDITIONAL_ENERGY_DELEGATION: bool = False
+    ENERGY_DELEGATION_MODE_ENERGY_DELEGATION_FACTOR: Decimal = Decimal("1.0")
+    ENERGY_DELEGATION_MODE_SEPARATE_BALANCE_AND_ENERGY_ACCOUNTS: bool = False
+    ENERGY_DELEGATION_MODE_ENERGY_ACCOUNT_PUB_KEY: str | None = None
+    # Voting
+    SR_VOTING: bool = False
+    SR_VOTES: Json[List[SrVote]] | None = None
+    SR_VOTING_ALLOW_BURN_TRX: bool = False
+    # Token customization
+    USDT_MIN_TRANSFER_THRESHOLD: Decimal | None = None
+    USDC_MIN_TRANSFER_THRESHOLD: Decimal | None = None
 
     TOKENS: List[Token] = [
         Token(
@@ -90,7 +112,14 @@ class Settings(BaseSettings):
     def get_min_transfer_threshold(self, symbol):
         for token in self.TOKENS:
             if self.TRON_NETWORK is token.network and token.symbol == symbol:
-                return token.min_transfer_threshold
+                if hasattr(self, f"{symbol}_MIN_TRANSFER_THRESHOLD") and (
+                    custom_threshold := getattr(
+                        self, f"{symbol}_MIN_TRANSFER_THRESHOLD"
+                    )
+                ):
+                    return custom_threshold
+                else:
+                    return token.min_transfer_threshold
         raise UnknownToken(f"Unknown token {symbol=}")
 
     @cache

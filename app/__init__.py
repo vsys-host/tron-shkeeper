@@ -24,7 +24,6 @@ sqlite3.register_converter("DECTEXT", lambda x: decimal.Decimal(x.decode()))
 
 
 def create_app():
-
     from flask.config import Config
 
     class AttrConfig(Config):
@@ -68,6 +67,10 @@ def create_app():
     from .api import metrics_blueprint
 
     app.register_blueprint(metrics_blueprint)
+
+    from .api import staking_bp
+
+    app.register_blueprint(staking_bp)
 
     from .db import engine, SQLModel
 
