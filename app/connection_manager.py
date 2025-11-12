@@ -54,7 +54,9 @@ class ConnectionManager:
         return client
 
     def get_client_for_server_id(self, server_id) -> Tron:
-        provider = HTTPProvider(self.servers[server_id].url)
+        provider = HTTPProvider(
+            self.servers[server_id].url, timeout=config.TRON_CLIENT_TIMEOUT
+        )
         adapter = requests.adapters.HTTPAdapter(pool_maxsize=100)
         provider.sess.mount("http://", adapter)
         provider.sess.mount("https://", adapter)

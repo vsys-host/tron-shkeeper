@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     FULLNODE_URL: str = "http://fullnode.tron.shkeeper.io"
     TRON_NODE_USERNAME: str = "shkeeper"
     TRON_NODE_PASSWORD: str = "tron"
+    TRON_CLIENT_TIMEOUT: int = 10
     API_USERNAME: str = Field("shkeeper", alias="BTC_USERNAME")
     API_PASSWORD: str = Field("shkeeper", alias="BTC_PASSWORD")
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
