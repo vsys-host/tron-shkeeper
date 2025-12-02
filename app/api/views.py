@@ -78,16 +78,43 @@ def get_transaction(txid):
         logger.warning(f"Can't get confirmations for {txid}")
         confirmations = 1
     tron_tx_list = parse_tx(tx, tx_info)
-    return [
-        {
-            "address": info.dst_addr,
-            "amount": info.amount,
-            "confirmations": confirmations,
-            "category": "receive",
-        }
-        for info in tron_tx_list
-        if info.dst_addr in BlockScanner.get_watched_accounts()
-    ]
+
+    result = []
+    for info in tron_tx_list:
+        if (
+            info.dst_addr in BlockScanner.get_watched_accounts()
+            and info.src_addr in BlockScanner.get_watched_accounts()
+        ):
+            result.append(
+                {
+                    "address": info.dst_addr,
+                    "amount": info.amount,
+                    "confirmations": confirmations,
+                    "category": "internal",
+                }
+            )
+
+        if info.dst_addr in BlockScanner.get_watched_accounts():
+            result.append(
+                {
+                    "address": info.dst_addr,
+                    "amount": info.amount,
+                    "confirmations": confirmations,
+                    "category": "receive",
+                }
+            )
+
+        if info.src_addr in BlockScanner.get_watched_accounts():
+            result.append(
+                {
+                    "address": info.dst_addr,
+                    "amount": info.amount,
+                    "confirmations": confirmations,
+                    "category": "send",
+                }
+            )
+
+    return result
 
 
 @api.post("/dump")
