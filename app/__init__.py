@@ -58,6 +58,13 @@ def create_app():
 
     utils.init_wallet(app)
 
+    # add fee-deposit account to watch list
+    block_scanner.BlockScanner.add_watched_account(
+        db.query_db2('select * from keys where type = "fee_deposit" ', one=True)[
+            "public"
+        ]
+    )
+
     app.url_map.converters["decimal"] = utils.DecimalConverter
 
     from .api import api as api_blueprint
