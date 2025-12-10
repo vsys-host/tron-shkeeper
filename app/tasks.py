@@ -98,6 +98,13 @@ def transfer_trc20_from(onetime_acc, symbol):
     precision = contract.functions.decimals()
 
     main_priv_key, main_publ_key = get_key(KeyType.fee_deposit)
+
+    if onetime_acc == main_publ_key:
+        logger.warning(
+            "Transfer from main account is not allowed. Terminating transfer."
+        )
+        return False
+
     energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
     onetime_priv_key, onetime_publ_key = get_key(KeyType.onetime, pub=onetime_acc)
 
@@ -465,6 +472,14 @@ def transfer_trx_from(onetime_publ_key):
     """
     Transfers TRX from onetime to main account
     """
+    logger.info(f"Starting TRX transfer from onetime account {onetime_publ_key}")
+    main_publ_key = query_db2(
+        'select * from keys where type = "fee_deposit" ', one=True
+    )["public"]
+
+    if main_publ_key == onetime_publ_key:
+        logger.warning("Skipping TRX transfer from main account.")
+        return {"status": "error", "error": "Skipping TRX transfer from main account."}
 
     bw = Wallet().bandwidth_of(onetime_publ_key)
     if bw < config.BANDWIDTH_PER_TRX_TRANSFER:
@@ -490,10 +505,6 @@ def transfer_trx_from(onetime_publ_key):
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
     if onetime_acc_balance == 0:
         return {"status": "error", "error": "skipping 0 TRX account"}
-
-    main_publ_key = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
-    )["public"]
 
     tx_trx = tron_client.trx.transfer(
         onetime_publ_key, main_publ_key, int(onetime_acc_balance * 1_000_000)
