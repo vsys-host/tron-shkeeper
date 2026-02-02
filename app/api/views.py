@@ -120,7 +120,7 @@ def get_transaction(txid):
 @api.post("/dump")
 def dump():
     rows = query_db(
-        'select * from keys where symbol = ? or type != "one_time"', (g.symbol,)
+        'select * from keys where symbol = ? or type != "onetime"', (g.symbol,)
     )
     keys = []
     for row in rows:
