@@ -3,15 +3,17 @@ from decimal import Decimal
 from flask import g, request
 from flask import current_app as app
 import tronpy
+from pydantic import ValidationError
 
 
 from .. import celery
 from ..config import config
-from ..tasks import payout as payout_task
+from ..tasks import custom_aml2_payout, payout as payout_task
 from ..tasks import prepare_payout, prepare_multipayout
 from . import api
 from ..wallet import Wallet
 from ..logging import logger
+from ..schemas import CustomAml2MultipayoutList
 
 
 @api.post("/calc-tx-fee/<decimal:amount>")
@@ -90,3 +92,26 @@ def get_task(id):
         return {"status": task.status, "result": task.result.args[0]}
     else:
         return {"status": task.status, "result": task.result}
+
+
+#
+# Custom AML2
+#
+
+
+@api.post("/custom_aml2_multipayout")
+def custom_aml2_multipayout():
+    try:
+        payout_data = request.get_json(force=True)
+    except Exception as e:
+        raise Exception(f"Bad JSON in payout list: {e}")
+
+    try:
+        payout_list = CustomAml2MultipayoutList.validate_python(payout_data)
+    except ValidationError as e:
+        raise Exception(f"Invalid payout list: {e}")
+
+    print(payout_list)
+
+    task = (custom_aml2_payout.s(payout_list, g.symbol)).apply_async()
+    return {"task_id": task.id}

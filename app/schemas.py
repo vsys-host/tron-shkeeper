@@ -3,7 +3,7 @@ from enum import Enum
 from functools import cache
 from typing import Annotated, Any, List, Literal
 
-from pydantic import AfterValidator, BaseModel, PositiveInt
+from pydantic import AfterValidator, BaseModel, PositiveInt, TypeAdapter
 import tronpy
 
 
@@ -73,3 +73,16 @@ class SrVote(BaseModel):
 
 
 SrVoteList = List[SrVote]
+
+
+#
+# Custom AML2
+#
+
+
+class CustomAml2Multipayout(BaseModel):
+    source: TronAddress
+    dest: TronAddress
+
+
+CustomAml2MultipayoutList = TypeAdapter(List[CustomAml2Multipayout])

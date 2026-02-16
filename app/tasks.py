@@ -468,53 +468,60 @@ def undelegate_energy(receiver):
 
 
 @celery.task()
-def transfer_trx_from(onetime_publ_key):
+def transfer_trx_from(source_account, destination_account=None):
     """
-    Transfers TRX from onetime to main account
+    Transfers TRX from source to destination account
     """
-    logger.info(f"Starting TRX transfer from onetime account {onetime_publ_key}")
-    main_publ_key = query_db2(
+    logger.info(f"Starting TRX transfer from source account {source_account}")
+
+    main_account = query_db2(
         'select * from keys where type = "fee_deposit" ', one=True
     )["public"]
 
-    if main_publ_key == onetime_publ_key:
-        logger.warning("Skipping TRX transfer from main account.")
-        return {"status": "error", "error": "Skipping TRX transfer from main account."}
+    if destination_account is None:
+        destination_account = main_account
 
-    bw = Wallet().bandwidth_of(onetime_publ_key)
+    if main_account == source_account:
+        logger.warning("Skipping TRX transfer from destination account.")
+        return {
+            "status": "error",
+            "error": "Skipping TRX transfer from destination account.",
+        }
+
+    bw = Wallet().bandwidth_of(source_account)
     if bw < config.BANDWIDTH_PER_TRX_TRANSFER:
         logger.info(
-            f"{onetime_publ_key} has not enough bandwidth "
+            f"{source_account} has not enough bandwidth "
             f"for a free transfer ({bw}/{config.BANDWIDTH_PER_TRX_TRANSFER})"
         )
         return
 
     tron_client = ConnectionManager.client()
-    onetime_priv_key = PrivateKey(
+    source_account_private_key = PrivateKey(
         bytes.fromhex(
             wallet_encryption.decrypt(
                 query_db2(
                     'select * from keys where type = "onetime" and public = ?',
-                    (onetime_publ_key,),
+                    (source_account,),
                     one=True,
                 )["private"]
             )
         )
     )
 
-    onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
-    if onetime_acc_balance == 0:
+    source_account_balance = tron_client.get_account_balance(source_account)
+    if source_account_balance == 0:
         return {"status": "error", "error": "skipping 0 TRX account"}
 
     tx_trx = tron_client.trx.transfer(
-        onetime_publ_key, main_publ_key, int(onetime_acc_balance * 1_000_000)
+        source_account, destination_account, int(source_account_balance * 1_000_000)
     )
     tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
     tx_trx = tx_trx.build()
-    tx_trx = tx_trx.sign(onetime_priv_key)
+    tx_trx = tx_trx.sign(source_account_private_key)
     tx_trx_res = tx_trx.broadcast().wait()
     logger.info(
-        f"{onetime_acc_balance} TRX sent to main account ({main_publ_key}) with TXID {tx_trx.txid}. Details: {tx_trx_res}"
+        f"{source_account_balance} TRX sent to destination account ({destination_account}) with TXID {tx_trx.txid}. Details: {tx_trx_res}"
     )
     return {"tx_trx_res": tx_trx_res}
 
@@ -804,3 +811,25 @@ def claim_reward(self, *args, **kwargs):
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender: Celery, **kwargs):
     pass
+
+
+#
+# Custom AML2
+#
+
+
+@celery.task()
+def custom_aml2_payout(payout_list, symbol):
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=config.CONCURRENT_MAX_WORKERS
+    ) as executor:
+        payout_results = list(
+            executor.map(
+                lambda payout: transfer_trx_from(
+                    source_account=payout.source, destination_account=payout.dest
+                ),
+                payout_list,
+            )
+        )
+    post_payout_results.delay(payout_results, symbol)
+    return payout_results
