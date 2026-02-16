@@ -803,15 +803,4 @@ def claim_reward(self, *args, **kwargs):
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender: Celery, **kwargs):
-    if config.SR_VOTING:
-        vote_for_sr.delay()
-
-    if config.EXTERNAL_DRAIN_CONFIG:
-        from .custom.aml.tasks import sweep_accounts, recheck_transactions
-
-        sender.add_periodic_task(
-            config.AML_RESULT_UPDATE_PERIOD, recheck_transactions.s()
-        )
-        sender.add_periodic_task(config.AML_SWEEP_ACCOUNTS_PERIOD, sweep_accounts.s())
-    else:
-        sender.add_periodic_task(config.BALANCES_RESCAN_PERIOD, scan_accounts.s())
+    pass
