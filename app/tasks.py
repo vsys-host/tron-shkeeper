@@ -368,7 +368,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
         )
 
         logger.info(
-            f"Transfer to main acc started for {source_account}. Balance: "
+            f"Transfer to {destination_account} started for {source_account}. Balance: "
             f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
         )
 
@@ -397,7 +397,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
     # Same flow for both modes
     #
 
-    tx_token = contract.functions.transfer(main_publ_key, int(token_balance))
+    tx_token = contract.functions.transfer(destination_account, int(token_balance))
     tx_token = tx_token.with_owner(source_account)
     tx_token = tx_token.fee_limit(int(config.TX_FEE_LIMIT * 1_000_000))
     tx_token._raw_data["expiration"] = current_timestamp() + 60_000
@@ -405,7 +405,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
     tx_token = tx_token.sign(source_account_private_key)
     tx_token_res = tx_token.broadcast().wait()
     logger.info(
-        f"{token_balance / 10**precision} {symbol} sent to {main_publ_key} with {tx_token.txid}. Details: {tx_token_res}"
+        f"{token_balance / 10**precision} {symbol} sent to {destination_account} with {tx_token.txid}. Details: {tx_token_res}"
     )
 
     if config.ENERGY_DELEGATION_MODE:
