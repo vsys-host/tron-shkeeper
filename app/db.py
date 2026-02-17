@@ -45,6 +45,18 @@ def get_db():
     return g.db
 
 
+def get_db2():
+    db = sqlite3.connect(
+        config.DATABASE,
+        detect_types=sqlite3.PARSE_DECLTYPES,
+        isolation_level=None,
+    )
+    db.execute("pragma journal_mode=wal;")
+    db.row_factory = sqlite3.Row
+
+    return db
+
+
 def close_db(e=None):
     db = g.pop("db", None)
     if db is not None:

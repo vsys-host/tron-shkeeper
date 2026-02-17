@@ -88,7 +88,7 @@ def payout(steps, symbol):
 @celery.task()
 def transfer_trc20_from(source_account, symbol, destination_account=None):
     """
-    Transfers TRC20 from onetime to main account
+    Transfers TRC20 tokens
     """
 
     tron_client = ConnectionManager.client()
@@ -149,7 +149,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
             else:
                 logger.info("Energy delegator has enough energy")
 
-                logger.info("Delegating energy to onetime account")
+                logger.info(f"Delegating energy to {source_account}")
 
                 unsigned_tx = tron_client.trx.delegate_resource(
                     owner=energy_delegator_pub,
@@ -163,12 +163,12 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
                 delegate_tx_info = signed_tx.broadcast().wait()
 
                 logger.info(
-                    f"Delegated {energy_needed} energy to onetime account {source_account} with TXID: {unsigned_tx.txid}"
+                    f"Delegated {energy_needed} energy to {source_account} with TXID: {unsigned_tx.txid}"
                 )
                 logger.info(delegate_tx_info)
 
                 logger.info(
-                    "Recheck resources of the onetime address after energy delegation"
+                    f"Recheck resources of {source_account} after energy delegation"
                 )
                 onetime_address_resources = tron_client.get_account_resource(
                     source_account
@@ -181,14 +181,14 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
                 )
                 if onetime_energy_available < energy_needed:
                     logger.warning(
-                        "Onetime account has not enough energy after delegation. Terminating transfer."
+                        f"{source_account} has not enough energy after delegation. Terminating transfer."
                     )
                     return False
                 else:
                     logger.info("Energy successfuly delegated")
                     return True
 
-    logger.info(f"Check ONETIME={source_account} {symbol} balance")
+    logger.info(f"Check {source_account} {symbol} balance")
     min_threshold = config.get_min_transfer_threshold(symbol)
     balance = Decimal(token_balance) / 10**precision
     if balance <= min_threshold:
@@ -203,7 +203,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
 
     if config.ENERGY_DELEGATION_MODE:
         logger.info(
-            f"Initiating TRC20 tokens transfer from ONETIME={source_account} to MAIN={main_publ_key} in ENERGY DELEGATION MODE"
+            f"Initiating TRC20 tokens transfer from {source_account} to {destination_account} in ENERGY DELEGATION MODE"
         )
 
         need_bw = (
@@ -229,7 +229,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
         try:
             onetime_address_resources = tron_client.get_account_resource(source_account)
             logger.info(
-                f"Onetime {source_account} is already on chain, skipping activation. Resource details {onetime_address_resources=}"
+                f"{source_account} is already on chain, skipping activation. Resource details {onetime_address_resources=}"
             )
         except tronpy.exceptions.AddressNotFound:
             TRX_FOR_ACTIVATION = "1.1"
@@ -279,7 +279,7 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
                 )
             except tronpy.exceptions.AddressNotFound:
                 logger.warning(
-                    "Onetime acount still not on chain after activation. Terminating transfer."
+                    f"{source_account} still not on chain after activation. Terminating transfer."
                 )
                 return
 
@@ -292,18 +292,18 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
         )
         logger.info(f"Estimated amount of energy for transfer is: {energy_needed}")
 
-        logger.info("Check the energy of onetime address")
+        logger.info(f"Check the energy of {source_account}")
 
         onetime_energy_available = onetime_address_resources.get("EnergyLimit", 0)
         if onetime_energy_available >= energy_needed:
             logger.info(
-                f"Onetime account {source_account} has {onetime_energy_available} "
+                f"{source_account} has {onetime_energy_available} "
                 f"of {energy_needed} energy. Skipping delegation."
             )
 
         else:
             logger.info(
-                f"Onetime account {source_account} has {onetime_energy_available} "
+                f"{source_account} has {onetime_energy_available} "
                 f"of {energy_needed} energy"
             )
 
@@ -315,12 +315,12 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
 
             if "fromAccounts" in onetime_delegated_resources:
                 logger.info(
-                    f"Found delegated energy on onetime account. Details {onetime_delegated_resources=}"
+                    f"Found delegated energy on  {source_account}. Details {onetime_delegated_resources=}"
                 )
 
                 if onetime_energy_available < energy_needed:
                     logger.warning(
-                        "Onetime account has not enough energy after previous delegation."
+                        f"{source_account} has not enough energy after previous delegation."
                     )
 
                     if config.ENERGY_DELEGATION_MODE_ALLOW_ADDITIONAL_ENERGY_DELEGATION:
@@ -364,11 +364,11 @@ def transfer_trc20_from(source_account, symbol, destination_account=None):
                 return
     else:
         logger.info(
-            "Transferring TRC20 tokens from onetime to main in TRX burning mode"
+            f"Transferring TRC20 tokens from {source_account} to {destination_account} in TRX burning mode"
         )
 
         logger.info(
-            f"Transfer to {destination_account} started for {source_account}. Balance: "
+            f"Transfer from {source_account} to {destination_account} started. Balance: "
             f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
         )
 
@@ -822,13 +822,27 @@ def custom_aml2_payout(payout_list, symbol):
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=config.CONCURRENT_MAX_WORKERS
     ) as executor:
-        payout_results = list(
-            executor.map(
-                lambda payout: transfer_trx_from(
-                    source_account=payout.source, destination_account=payout.dest
-                ),
-                payout_list,
+        if "TRX" == symbol:
+            payout_results = list(
+                executor.map(
+                    lambda payout: transfer_trx_from(
+                        source_account=payout.source,
+                        destination_account=payout.dest,
+                    ),
+                    payout_list,
+                )
             )
-        )
+        else:
+            payout_results = list(
+                executor.map(
+                    lambda payout: transfer_trc20_from(
+                        source_account=payout.source,
+                        symbol=symbol,
+                        destination_account=payout.dest,
+                    ),
+                    payout_list,
+                )
+            )
+
     post_payout_results.delay(payout_results, symbol)
     return payout_results

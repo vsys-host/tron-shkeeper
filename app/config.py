@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
     SHKEEPER_HOST: str = "localhost:5000"
     INTERNAL_TX_FEE: Decimal = Decimal("40")
-    TX_FEE: Decimal = Decimal("40")  # includes bandwidth, energy and activation fees
+    TX_FEE: Decimal = Decimal("15")  # includes bandwidth, energy and activation fees
     TX_FEE_LIMIT: Decimal = Decimal(
         "50"
     )  # max TRX tx can burn for resources (energy, bandwidth)
@@ -83,14 +83,14 @@ class Settings(BaseSettings):
             network=TronNetwork.mainnet,
             symbol=TronSymbol.USDT,
             contract_address="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
-            min_transfer_threshold="5",
+            min_transfer_threshold="0",
             decimal=6,
         ),
         Token(
             network=TronNetwork.mainnet,
             symbol=TronSymbol.USDC,
             contract_address="TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8",
-            min_transfer_threshold="5",
+            min_transfer_threshold="0",
             decimal=6,
         ),
         Token(

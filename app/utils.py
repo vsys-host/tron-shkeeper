@@ -65,11 +65,11 @@ def add_key(type: KeyType, public=None, uniq_type=True):
 
 def get_key(type: KeyType, pub: str | None = None) -> tuple[PrivateKey | None, str]:
     if pub:
-        key = query_db(
+        key = query_db2(
             "select * from keys where type = ? and public = ?", (type, pub), one=True
         )
     else:
-        key = query_db("select * from keys where type = ?", (type,), one=True)
+        key = query_db2("select * from keys where type = ?", (type,), one=True)
     if not key:
         logger.error(f"No key found for type {type}")
         return None, ""
