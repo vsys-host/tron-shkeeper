@@ -573,64 +573,18 @@ def scan_accounts(self, *args, **kwargs):
             "exception_num": 0,
         }
 
+        # collecting unused TRX left after TRC20 transfer
         accounts = [
             row["public"]
-            for row in query_db('SELECT public FROM keys WHERE type = "onetime"')
+            for row in query_db(
+                'SELECT public FROM keys WHERE type = "onetime" and symbol != "TRX"'
+            )
         ]
 
-        balances_to_collect = {"trx": [], "trc20": []}
+        balances_to_collect = {"trx": []}
 
         for index, account in enumerate(accounts, start=1):
             try:
-                #
-                # TRC20
-                #
-
-                for symbol in [token.symbol for token in config.get_tokens()]:
-                    contract = ConnectionManager.client().get_contract(
-                        config.get_contract_address(symbol)
-                    )
-
-                    while ret := 0 < config.CONCURRENT_MAX_RETRIES:
-                        try:
-                            trc20_balance = Decimal(
-                                contract.functions.balanceOf(account)
-                            ) / (10 ** config.get_decimal(symbol))
-                            break
-                        except tronpy.exceptions.UnknownError as e:
-                            logger.debug(
-                                f"{account} {symbol} trc20 balance fetch error: {e}"
-                            )
-                            ret += 1
-                    else:
-                        raise Exception(
-                            f"CONCURRENT_MAX_RETRIES reached while getting trc20 balance of {account}"
-                        )
-
-                    stats["balances"][symbol] += trc20_balance
-
-                    if config.SAVE_BALANCES_TO_DB:
-                        acc_balance = session.exec(
-                            select(Balance).where(
-                                Balance.account == account, Balance.symbol == symbol
-                            )
-                        ).first()
-                        if acc_balance:
-                            acc_balance.balance = trc20_balance
-
-                        else:
-                            acc_balance = Balance()
-                            acc_balance.account = account
-                            acc_balance.symbol = symbol
-                            acc_balance.balance = trc20_balance
-                        session.add(acc_balance)
-                        session.commit()
-
-                    if trc20_balance > 0:
-                        balances_to_collect["trc20"].append(
-                            [account, symbol, trc20_balance]
-                        )
-
                 #
                 # TRX
                 #
@@ -682,31 +636,6 @@ def scan_accounts(self, *args, **kwargs):
             except Exception as e:
                 logger.exception(f"{account} scan error: {e}")
                 stats["exception_num"] += 1
-
-        # Sort trc20 balances by balance in descending order
-        balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
-        logger.info("TRC20 queue length: %d" % len(balances_to_collect["trc20"]))
-        # Log histogram of TRC20 balances
-        bins = [5, 50, 100, 300, 500, 1000, 2000]
-        histogram = collections.Counter()
-        for _, _, balance in balances_to_collect["trc20"]:
-            for b in bins:
-                if balance < b:
-                    histogram[f"<{b}"] += 1
-                    break
-            else:
-                histogram[">=2000"] += 1
-        logger.info(
-            "TRC20 balances histogram: "
-            + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
-        )
-        for account, symbol, trc20_balance in balances_to_collect["trc20"]:
-            if not is_task_running(
-                self,
-                "app.tasks.transfer_trc20_from",
-                args=[account, symbol],
-            ):
-                transfer_trc20_from(account, symbol)
 
         # Sort trx balances by balance in descending order
         balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
