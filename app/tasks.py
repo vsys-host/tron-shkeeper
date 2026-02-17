@@ -86,7 +86,7 @@ def payout(steps, symbol):
 
 
 @celery.task()
-def transfer_trc20_from(onetime_acc, symbol):
+def transfer_trc20_from(source_account, symbol, destination_account=None):
     """
     Transfers TRC20 from onetime to main account
     """
@@ -99,16 +99,21 @@ def transfer_trc20_from(onetime_acc, symbol):
 
     main_priv_key, main_publ_key = get_key(KeyType.fee_deposit)
 
-    if onetime_acc == main_publ_key:
+    if destination_account is None:
+        destination_account = main_publ_key
+
+    if source_account == main_publ_key:
         logger.warning(
             "Transfer from main account is not allowed. Terminating transfer."
         )
         return False
 
     energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
-    onetime_priv_key, onetime_publ_key = get_key(KeyType.onetime, pub=onetime_acc)
+    source_account_private_key, source_account = get_key(
+        KeyType.onetime, pub=source_account
+    )
 
-    token_balance = contract.functions.balanceOf(onetime_publ_key)
+    token_balance = contract.functions.balanceOf(source_account)
 
     tx_trx_res = None
 
@@ -148,7 +153,7 @@ def transfer_trc20_from(onetime_acc, symbol):
 
                 unsigned_tx = tron_client.trx.delegate_resource(
                     owner=energy_delegator_pub,
-                    receiver=onetime_publ_key,
+                    receiver=source_account,
                     balance=sun_to_delegate,
                     resource="ENERGY",
                 ).build()
@@ -158,7 +163,7 @@ def transfer_trc20_from(onetime_acc, symbol):
                 delegate_tx_info = signed_tx.broadcast().wait()
 
                 logger.info(
-                    f"Delegated {energy_needed} energy to onetime account {onetime_publ_key} with TXID: {unsigned_tx.txid}"
+                    f"Delegated {energy_needed} energy to onetime account {source_account} with TXID: {unsigned_tx.txid}"
                 )
                 logger.info(delegate_tx_info)
 
@@ -166,13 +171,13 @@ def transfer_trc20_from(onetime_acc, symbol):
                     "Recheck resources of the onetime address after energy delegation"
                 )
                 onetime_address_resources = tron_client.get_account_resource(
-                    onetime_publ_key
+                    source_account
                 )
                 onetime_energy_available = onetime_address_resources.get(
                     "EnergyLimit", 0
                 )
                 logger.info(
-                    f"{onetime_publ_key=} {onetime_energy_available=} {energy_needed=}"
+                    f"{source_account=} {onetime_energy_available=} {energy_needed=}"
                 )
                 if onetime_energy_available < energy_needed:
                     logger.warning(
@@ -183,12 +188,12 @@ def transfer_trc20_from(onetime_acc, symbol):
                     logger.info("Energy successfuly delegated")
                     return True
 
-    logger.info(f"Check ONETIME={onetime_publ_key} {symbol} balance")
+    logger.info(f"Check ONETIME={source_account} {symbol} balance")
     min_threshold = config.get_min_transfer_threshold(symbol)
     balance = Decimal(token_balance) / 10**precision
     if balance <= min_threshold:
         logger.warning(
-            f"Treshold not reached for {onetime_publ_key}. Has: {balance} {symbol} need: {min_threshold} {symbol}. Terminating transfer."
+            f"Treshold not reached for {source_account}. Has: {balance} {symbol} need: {min_threshold} {symbol}. Terminating transfer."
         )
         return
     else:
@@ -198,7 +203,7 @@ def transfer_trc20_from(onetime_acc, symbol):
 
     if config.ENERGY_DELEGATION_MODE:
         logger.info(
-            f"Initiating TRC20 tokens transfer from ONETIME={onetime_publ_key} to MAIN={main_publ_key} in ENERGY DELEGATION MODE"
+            f"Initiating TRC20 tokens transfer from ONETIME={source_account} to MAIN={main_publ_key} in ENERGY DELEGATION MODE"
         )
 
         need_bw = (
@@ -222,11 +227,9 @@ def transfer_trc20_from(onetime_acc, symbol):
                 return
 
         try:
-            onetime_address_resources = tron_client.get_account_resource(
-                onetime_publ_key
-            )
+            onetime_address_resources = tron_client.get_account_resource(source_account)
             logger.info(
-                f"Onetime {onetime_publ_key} is already on chain, skipping activation. Resource details {onetime_address_resources=}"
+                f"Onetime {source_account} is already on chain, skipping activation. Resource details {onetime_address_resources=}"
             )
         except tronpy.exceptions.AddressNotFound:
             TRX_FOR_ACTIVATION = "1.1"
@@ -237,7 +240,7 @@ def transfer_trc20_from(onetime_acc, symbol):
             logger.info(f"Main account balance: {main_trx_balance} TRX")
             if main_trx_balance < Decimal(TRX_FOR_ACTIVATION):
                 logger.warning(
-                    f"Not enough TRX to activate {onetime_publ_key}. Terminating transfer."
+                    f"Not enough TRX to activate {source_account}. Terminating transfer."
                 )
                 return
             else:
@@ -258,10 +261,10 @@ def transfer_trc20_from(onetime_acc, symbol):
                     )
                     return
 
-            logger.info(f"Activating {onetime_publ_key} by sending 0.1 TRX")
+            logger.info(f"Activating {source_account} by sending 0.1 TRX")
             tx_trx = tron_client.trx.transfer(
                 main_publ_key,
-                onetime_publ_key,
+                source_account,
                 int(0.1 * 1_000_000),
             )
             tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
@@ -269,12 +272,10 @@ def transfer_trc20_from(onetime_acc, symbol):
             tx_trx = tx_trx.sign(main_priv_key)
             tx_trx_res = tx_trx.broadcast().wait()
             logger.info(f"0.1 TRX sent. Details: {tx_trx_res}")
-            onetime_address_resources = tron_client.get_account_resource(
-                onetime_publ_key
-            )
+            onetime_address_resources = tron_client.get_account_resource(source_account)
             try:
                 onetime_address_resources = tron_client.get_account_resource(
-                    onetime_publ_key
+                    source_account
                 )
             except tronpy.exceptions.AddressNotFound:
                 logger.warning(
@@ -284,7 +285,7 @@ def transfer_trc20_from(onetime_acc, symbol):
 
         logger.info("Estimate the amount of energy needed to make transfer")
         energy_needed = tron_client.get_estimated_energy(
-            onetime_publ_key,
+            source_account,
             contract_address,
             "transfer(address,uint256)",
             trx_abi.encode_single("(address,uint256)", (main_publ_key, 42)).hex(),
@@ -296,20 +297,20 @@ def transfer_trc20_from(onetime_acc, symbol):
         onetime_energy_available = onetime_address_resources.get("EnergyLimit", 0)
         if onetime_energy_available >= energy_needed:
             logger.info(
-                f"Onetime account {onetime_publ_key} has {onetime_energy_available} "
+                f"Onetime account {source_account} has {onetime_energy_available} "
                 f"of {energy_needed} energy. Skipping delegation."
             )
 
         else:
             logger.info(
-                f"Onetime account {onetime_publ_key} has {onetime_energy_available} "
+                f"Onetime account {source_account} has {onetime_energy_available} "
                 f"of {energy_needed} energy"
             )
 
             logger.info("Check if energy was alread delegated")
 
             onetime_delegated_resources = (
-                tron_client.get_delegated_resource_account_index_v2(onetime_publ_key)
+                tron_client.get_delegated_resource_account_index_v2(source_account)
             )
 
             if "fromAccounts" in onetime_delegated_resources:
@@ -348,16 +349,14 @@ def transfer_trc20_from(onetime_acc, symbol):
                     energy_needed, onetime_address_resources
                 )
 
-            logger.info(
-                f"Delegating {sun_needed / 1_000_000} TRX to {onetime_publ_key}"
-            )
+            logger.info(f"Delegating {sun_needed / 1_000_000} TRX to {source_account}")
             if not delegate_energy(sun_needed):
                 return
 
             # Check available bandwidth before transfer trc20 tokens
             # from one_time to fee_deposit account
             if not has_free_bw(
-                onetime_publ_key, config.BANDWIDTH_PER_TRC20_TRANSFER_CALL
+                source_account, config.BANDWIDTH_PER_TRC20_TRANSFER_CALL
             ):
                 logger.warning(
                     "One-time account has no bandwidth. Terminating transfer."
@@ -369,7 +368,7 @@ def transfer_trc20_from(onetime_acc, symbol):
         )
 
         logger.info(
-            f"Transfer to main acc started for {onetime_publ_key}. Balance: "
+            f"Transfer to main acc started for {source_account}. Balance: "
             f"{balance} {symbol}. Threshold is {min_threshold} {symbol}"
         )
 
@@ -383,7 +382,7 @@ def transfer_trc20_from(onetime_acc, symbol):
 
         tx_trx = tron_client.trx.transfer(
             main_publ_key,
-            onetime_publ_key,
+            source_account,
             int(config.get_internal_trc20_tx_fee() * 1_000_000),
         )
         tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
@@ -391,7 +390,7 @@ def transfer_trc20_from(onetime_acc, symbol):
         tx_trx = tx_trx.sign(main_priv_key)
         tx_trx_res = tx_trx.broadcast().wait()
         logger.info(
-            f"Fee sent to {onetime_publ_key} with TXID {tx_trx.txid}. Details: {tx_trx_res}"
+            f"Fee sent to {source_account} with TXID {tx_trx.txid}. Details: {tx_trx_res}"
         )
 
     #
@@ -399,11 +398,11 @@ def transfer_trc20_from(onetime_acc, symbol):
     #
 
     tx_token = contract.functions.transfer(main_publ_key, int(token_balance))
-    tx_token = tx_token.with_owner(onetime_publ_key)
+    tx_token = tx_token.with_owner(source_account)
     tx_token = tx_token.fee_limit(int(config.TX_FEE_LIMIT * 1_000_000))
     tx_token._raw_data["expiration"] = current_timestamp() + 60_000
     tx_token = tx_token.build()
-    tx_token = tx_token.sign(onetime_priv_key)
+    tx_token = tx_token.sign(source_account_private_key)
     tx_token_res = tx_token.broadcast().wait()
     logger.info(
         f"{token_balance / 10**precision} {symbol} sent to {main_publ_key} with {tx_token.txid}. Details: {tx_token_res}"
@@ -411,9 +410,9 @@ def transfer_trc20_from(onetime_acc, symbol):
 
     if config.ENERGY_DELEGATION_MODE:
         if config.DEVMODE_CELERY_NODELAY:
-            undelegate_energy(onetime_publ_key)
+            undelegate_energy(source_account)
         else:
-            undelegate_energy.delay(onetime_publ_key)
+            undelegate_energy.delay(source_account)
 
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
 
