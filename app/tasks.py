@@ -738,7 +738,7 @@ def claim_reward(self, *args, **kwargs):
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender: Celery, **kwargs):
-    pass
+    sender.add_periodic_task(config.BALANCES_RESCAN_PERIOD, scan_accounts.s())
 
 
 #
