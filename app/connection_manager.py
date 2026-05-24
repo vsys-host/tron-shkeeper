@@ -172,6 +172,7 @@ class ConnectionManager:
 
             while True:
                 self.refresh_best_server()
+                time.sleep(config.MULTISERVER_REFRESH_BEST_SERVER_PERIOD)
         except Exception as e:
             logger.warning(f"Exception in best server refresh loop: {e}")
         finally:
