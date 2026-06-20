@@ -717,24 +717,30 @@ def scan_accounts(self, *args, **kwargs):
             + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
         )
         for account, symbol, trc20_balance in balances_to_collect["trc20"]:
-            if not is_task_running(
-                self,
-                "app.tasks.transfer_trc20_from",
-                args=[account, symbol],
-            ):
-                transfer_trc20_from(account, symbol)
+            try:
+                if not is_task_running(
+                    self,
+                    "app.tasks.transfer_trc20_from",
+                    args=[account, symbol],
+                ):
+                    transfer_trc20_from(account, symbol)
+            except Exception as e:
+                logger.warning(f"{account} transfer error: {e}")
 
         # Sort trx balances by balance in descending order
         balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
         # logger.info(balances_to_collect["trx"])
         for account, trx_balance in balances_to_collect["trx"]:
-            if not is_task_running(
-                self, "app.tasks.transfer_trc20_from", args=[account]
-            ):
-                # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
-                # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
-                # so there will be no TRX to burn for sure.
-                transfer_trx_from(account)
+            try:
+                if not is_task_running(
+                    self, "app.tasks.transfer_trc20_from", args=[account]
+                ):
+                    # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
+                    # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
+                    # so there will be no TRX to burn for sure.
+                    transfer_trx_from(account)
+            except Exception as e:
+                logger.warning(f"{account} transfer error: {e}")
 
     return stats
 
