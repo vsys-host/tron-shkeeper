@@ -561,6 +561,9 @@ def scan_accounts(self, *args, **kwargs):
     from .db import engine
     from .models import Balance
 
+    task_start = time.monotonic()
+    _progress_interval = config.SCAN_ACCOUNTS_PROGRESS_LOG_INTERVAL
+
     with Session(engine) as session:
         stats = {
             "balances": collections.defaultdict(Decimal),
@@ -574,6 +577,8 @@ def scan_accounts(self, *args, **kwargs):
 
         balances_to_collect = {"trx": [], "trc20": []}
 
+        total = len(accounts)
+        collection_loop_start = time.monotonic()
         for index, account in enumerate(accounts, start=1):
             try:
                 #
@@ -672,6 +677,16 @@ def scan_accounts(self, *args, **kwargs):
                     f"Scanned {index} of {len(accounts)} accounts, found: "
                     + ", ".join([f"{v} {k}" for k, v in stats["balances"].items()])
                 )
+                if (
+                    total > 0
+                    and (index * 100 // total) // _progress_interval
+                    > ((index - 1) * 100 // total) // _progress_interval
+                ):
+                    _now = time.monotonic()
+                    logger.info(
+                        f"scan_accounts balance collection: {index * 100 // total}% ({index}/{total} accounts)"
+                        f" | loop {_now - collection_loop_start:.1f}s | task {_now - task_start:.1f}s"
+                    )
 
             except Exception as e:
                 logger.exception(f"{account} scan error: {e}")
@@ -716,7 +731,11 @@ def scan_accounts(self, *args, **kwargs):
             "TRC20 balances histogram: "
             + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
         )
-        for account, symbol, trc20_balance in balances_to_collect["trc20"]:
+        trc20_total = len(balances_to_collect["trc20"])
+        trc20_sweep_start = time.monotonic()
+        for trc20_idx, (account, symbol, trc20_balance) in enumerate(
+            balances_to_collect["trc20"], start=1
+        ):
             try:
                 if not is_task_running(
                     self,
@@ -726,11 +745,25 @@ def scan_accounts(self, *args, **kwargs):
                     transfer_trc20_from(account, symbol)
             except Exception as e:
                 logger.warning(f"{account} transfer error: {e}")
+            if (
+                trc20_total > 0
+                and (trc20_idx * 100 // trc20_total) // _progress_interval
+                > ((trc20_idx - 1) * 100 // trc20_total) // _progress_interval
+            ):
+                _now = time.monotonic()
+                logger.info(
+                    f"scan_accounts TRC20 sweeping: {trc20_idx * 100 // trc20_total}% ({trc20_idx}/{trc20_total})"
+                    f" | loop {_now - trc20_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+                )
 
         # Sort trx balances by balance in descending order
         balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
+        trx_total = len(balances_to_collect["trx"])
+        trx_sweep_start = time.monotonic()
         # logger.info(balances_to_collect["trx"])
-        for account, trx_balance in balances_to_collect["trx"]:
+        for trx_idx, (account, trx_balance) in enumerate(
+            balances_to_collect["trx"], start=1
+        ):
             try:
                 if not is_task_running(
                     self, "app.tasks.transfer_trc20_from", args=[account]
@@ -741,6 +774,16 @@ def scan_accounts(self, *args, **kwargs):
                     transfer_trx_from(account)
             except Exception as e:
                 logger.warning(f"{account} transfer error: {e}")
+            if (
+                trx_total > 0
+                and (trx_idx * 100 // trx_total) // _progress_interval
+                > ((trx_idx - 1) * 100 // trx_total) // _progress_interval
+            ):
+                _now = time.monotonic()
+                logger.info(
+                    f"scan_accounts TRX sweeping: {trx_idx * 100 // trx_total}% ({trx_idx}/{trx_total})"
+                    f" | loop {_now - trx_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+                )
 
     return stats
 

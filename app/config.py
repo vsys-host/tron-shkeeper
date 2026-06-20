@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     CONCURRENT_MAX_WORKERS: int = 1
     CONCURRENT_MAX_RETRIES: int = 10
     BALANCES_RESCAN_PERIOD: int = 3600
+    SCAN_ACCOUNTS_PROGRESS_LOG_INTERVAL: int = 5
     SAVE_BALANCES_TO_DB: bool = True
     REDIS_HOST: str = "localhost"
     FULLNODE_URL: str = "http://fullnode.tron.shkeeper.io"
