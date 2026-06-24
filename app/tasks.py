@@ -736,15 +736,32 @@ def scan_accounts(self, *args, **kwargs):
         for trc20_idx, (account, symbol, trc20_balance) in enumerate(
             balances_to_collect["trc20"], start=1
         ):
-            try:
-                if not is_task_running(
-                    self,
-                    "app.tasks.transfer_trc20_from",
-                    args=[account, symbol],
-                ):
-                    transfer_trc20_from(account, symbol)
-            except Exception as e:
-                logger.warning(f"{account} transfer error: {e}")
+            _retry_deadline = time.monotonic() + config.SWEEP_TRC20_RETRY_TIMEOUT
+            _retry_delay = config.SWEEP_TRC20_RETRY_INITIAL_DELAY
+            _retry_attempt = 0
+            while True:
+                try:
+                    if not is_task_running(
+                        self,
+                        "app.tasks.transfer_trc20_from",
+                        args=[account, symbol],
+                    ):
+                        transfer_trc20_from(account, symbol)
+                    break
+                except Exception as e:
+                    _retry_attempt += 1
+                    if time.monotonic() + _retry_delay > _retry_deadline:
+                        logger.warning(
+                            f"{account} transfer failed after {_retry_attempt} attempt(s), giving up: {e}"
+                        )
+                        break
+                    logger.warning(
+                        f"{account} transfer error (attempt {_retry_attempt}, retrying in {_retry_delay}s): {e}"
+                    )
+                    time.sleep(_retry_delay)
+                    _retry_delay = min(
+                        _retry_delay * 2, config.SWEEP_TRC20_RETRY_TIMEOUT
+                    )
             if (
                 trc20_total > 0
                 and (trc20_idx * 100 // trc20_total) // _progress_interval
