@@ -758,6 +758,7 @@ def scan_accounts(self, *args, **kwargs):
 
         # Sort trx balances by balance in descending order
         balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
+        accounts_with_trc20 = {acc for acc, _sym, _bal in balances_to_collect["trc20"]}
         trx_total = len(balances_to_collect["trx"])
         trx_sweep_start = time.monotonic()
         # logger.info(balances_to_collect["trx"])
@@ -765,7 +766,11 @@ def scan_accounts(self, *args, **kwargs):
             balances_to_collect["trx"], start=1
         ):
             try:
-                if not is_task_running(
+                if account in accounts_with_trc20:
+                    logger.info(
+                        f"Skipping TRX sweep for {account}: account has TRC20 balance"
+                    )
+                elif not is_task_running(
                     self, "app.tasks.transfer_trc20_from", args=[account]
                 ):
                     # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
