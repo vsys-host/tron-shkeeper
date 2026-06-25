@@ -700,7 +700,7 @@ def scan_accounts(self, *args, **kwargs):
                 "app.tasks.transfer_trc20_from",
                 args=[account, symbol],
             ):
-                transfer_trc20_from(account, symbol)
+                transfer_trc20_from.delay(account, symbol)
 
         # Sort trx balances by balance in descending order
         balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
@@ -712,7 +712,7 @@ def scan_accounts(self, *args, **kwargs):
                 # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
                 # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
                 # so there will be no TRX to burn for sure.
-                transfer_trx_from(account)
+                transfer_trx_from.delay(account)
 
     return stats
 
