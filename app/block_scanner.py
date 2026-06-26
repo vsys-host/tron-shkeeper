@@ -297,7 +297,13 @@ class BlockScanner:
                                             tron_tx.dst_addr, tron_tx.symbol
                                         )
                                 else:
-                                    transfer_trx_from.delay(tron_tx.dst_addr)
+                                    if config.ENERGY_DELEGATION_MODE:
+                                        # Don't send TRX immediately to not waste free bandwidth.
+                                        # Funds will be sweeped by scan_accounts task
+                                        # if the account does not hold TRC20 tokens.
+                                        pass
+                                    else:
+                                        transfer_trx_from.delay(tron_tx.dst_addr)
                             else:
                                 logger.warning(
                                     f"Not sending notification for tx with status {tron_tx.status}: {tron_tx}"
