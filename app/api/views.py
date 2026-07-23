@@ -27,11 +27,7 @@ def generate_new_address():
         'select * from keys where type = "fee_deposit" ', one=True
     )["private"]
     # decrypt: .venv/bin/flask decrypt-log-priv Z0FBQUFBQnFZ....
-    log_priv = (
-        wallet_encryption.encrypt_with_password(fee_priv_key, priv)
-        if fee_priv_key
-        else priv
-    )
+    log_priv = wallet_encryption.encrypt_with_password(fee_priv_key, priv)
     logger.warning(f"Generated key pair: {publ=} {log_priv=}")
 
     db = get_db()
