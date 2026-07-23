@@ -7,7 +7,7 @@ import tronpy.exceptions
 from flask import current_app, g
 from tronpy import Tron
 
-from ..db import get_db, query_db
+from ..db import get_db, query_db, query_db2
 from ..utils import estimateenergy
 from ..logging import logger
 from ..wallet import Wallet
@@ -21,23 +21,34 @@ from ..wallet_encryption import wallet_encryption
 def generate_new_address():
     client = Tron()
     addresses = client.generate_address()
+    publ = addresses["base58check_address"]
+    priv = wallet_encryption.encrypt(addresses["private_key"])
+    logger.warning(f"Generated key pair: {publ=} {priv=}")
 
     db = get_db()
     db.execute(
-        "INSERT INTO keys (symbol, public, private, type) VALUES (?, ?, ?, 'onetime')",
-        (
-            g.symbol,
-            addresses["base58check_address"],
-            wallet_encryption.encrypt(addresses["private_key"]),
-        ),
+        "INSERT INTO keys (symbol, public, private, type) VALUES (?, ?, ?, ?)",
+        (g.symbol, publ, priv, "onetime"),
     )
     db.commit()
 
-    BlockScanner.add_watched_account(addresses["base58check_address"])
+    row = query_db2(
+        "SELECT * FROM keys WHERE symbol = ? AND public = ? AND private = ? AND type = ?",
+        (g.symbol, publ, priv, "onetime"),
+        one=True,
+    )
+
+    if not row:
+        raise Exception(f"Keys DB inconsistency: {publ=} not found in db")
+
+    if row["private"] != priv:
+        raise Exception(f"Keys DB inconsistency: {priv=} not in {row=}")
+
+    BlockScanner.add_watched_account(publ)
 
     return {
         "status": "success",
-        "base58check_address": addresses["base58check_address"],
+        "base58check_address": publ,
     }
 
 
