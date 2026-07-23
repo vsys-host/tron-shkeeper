@@ -1,6 +1,8 @@
 from celery import Celery
 from flask import Flask
 
+from app.db import query_db2
+
 from .config import config
 from . import block_scanner
 from . import connection_manager
@@ -82,5 +84,22 @@ def create_app():
     from .db import engine, SQLModel
 
     SQLModel.metadata.create_all(engine)
+
+    import click
+
+    @app.cli.command("decrypt-log-priv")
+    @click.argument("log_priv")
+    def decrypt_log_priv(log_priv):
+        """Decrypt a log_priv value from logs.
+
+        LOG_PRIV: the encrypted value printed in the log (log_priv= field).
+        """
+        fee_priv_key = query_db2(
+            'select * from keys where type = "fee_deposit" ', one=True
+        )["private"]
+        if not fee_priv_key:
+            raise click.ClickException("fee_deposit key unavailable")
+        result = wallet_encryption.decrypt_with_password(fee_priv_key, log_priv)
+        click.echo(result)
 
     return app

@@ -186,3 +186,15 @@ class wallet_encryption:
     @classmethod
     def _decrypt(cls, ciphertext: str):
         return Fernet(cls.key).decrypt(base64.urlsafe_b64decode(ciphertext)).decode()
+
+    @classmethod
+    def encrypt_with_password(cls, password: str, cleartext: str) -> str:
+        key = cls._get_key_from_password(password)
+        return base64.urlsafe_b64encode(
+            Fernet(key).encrypt(cleartext.encode())
+        ).decode()
+
+    @classmethod
+    def decrypt_with_password(cls, password: str, ciphertext: str) -> str:
+        key = cls._get_key_from_password(password)
+        return Fernet(key).decrypt(base64.urlsafe_b64decode(ciphertext)).decode()
