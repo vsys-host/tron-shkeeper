@@ -1,13 +1,14 @@
-CREATE TABLE IF NOT EXISTS keys (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  public TEXT NOT NULL,
-  private TEXT NOT NULL,
-  symbol TEXT NOT NULL,
-  type TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS `keys` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `public` VARCHAR(64) NOT NULL,
+  `private` VARCHAR(1024) NOT NULL,
+  `symbol` VARCHAR(64) NOT NULL,
+  `type` VARCHAR(64) NOT NULL,
+  `store_id` INT NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS settings (
-  `name` TEXT NOT NULL,
-  `value` TEXT,
+  `name` VARCHAR(255) NOT NULL,
+  `value` VARCHAR(1024),
   UNIQUE(`name`)
 );

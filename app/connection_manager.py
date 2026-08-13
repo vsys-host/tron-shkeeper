@@ -74,7 +74,7 @@ class ConnectionManager:
 
     def set_current_server_id(self, server_id):
         query_db2(
-            'UPDATE settings SET value = ? WHERE name = "current_server_id"',
+            "UPDATE settings SET value = %s WHERE name = 'current_server_id'",
             (server_id,),
         )
         logger.debug(f"Current server ID is set to: {server_id}")
@@ -161,7 +161,7 @@ class ConnectionManager:
                     try:
                         server_id = self.get_best_server_id()
                         query_db2(
-                            'INSERT INTO settings VALUES ("current_server_id", ?)',
+                            "INSERT INTO settings VALUES ('current_server_id', %s)",
                             (server_id,),
                         )
                         logger.debug(f"Current server set to: {server_id}")

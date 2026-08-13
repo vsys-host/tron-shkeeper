@@ -16,7 +16,9 @@ class Wallet:
         "decimals": {},
         "contracts": {},
     }
-    main_account = query_db2('select * from keys where type = "fee_deposit" ', one=True)
+    main_account = query_db2(
+        'select * from `keys` where type = "fee_deposit" ', one=True
+    )
 
     def __init__(self, symbol="TRX"):
         self.symbol = symbol
@@ -61,7 +63,7 @@ class Wallet:
     def transfer(self, dst, amount, src_address: TronAddress = None):
         if src_address:
             src_account = query_db2(
-                "select * from keys where public = ?", (src_address,), one=True
+                "select * from `keys` where public = %s", (src_address,), one=True
             )
         else:
             src_account = self.main_account

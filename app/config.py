@@ -15,9 +15,7 @@ class Settings(BaseSettings):
 
     TRON_NETWORK: TronNetwork = TronNetwork.mainnet
     DEBUG: bool = False
-    DATABASE: str = "data/database.db"
-    DB_URI: str = "sqlite:///data/tron.db"
-    BALANCES_DATABASE: str = "data/trc20balances.db"
+    DB_URI: str = "mysql+pymysql://root:shkeeper@mariadb/tron-shkeeper?charset=utf8mb4"
     CONCURRENT_MAX_WORKERS: int = 1
     CONCURRENT_MAX_RETRIES: int = 10
     BALANCES_RESCAN_PERIOD: int = 3600

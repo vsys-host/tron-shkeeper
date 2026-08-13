@@ -474,7 +474,7 @@ def transfer_trx_from(onetime_publ_key):
     """
     logger.info(f"Starting TRX transfer from onetime account {onetime_publ_key}")
     main_publ_key = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
+        'select * from `keys` where type = "fee_deposit" ', one=True
     )["public"]
 
     if main_publ_key == onetime_publ_key:
@@ -494,7 +494,7 @@ def transfer_trx_from(onetime_publ_key):
         bytes.fromhex(
             wallet_encryption.decrypt(
                 query_db2(
-                    'select * from keys where type = "onetime" and public = ?',
+                    "select * from `keys` where type = 'onetime' and public = %s",
                     (onetime_publ_key,),
                     one=True,
                 )["private"]
@@ -572,7 +572,7 @@ def scan_accounts(self, *args, **kwargs):
 
         accounts = [
             row["public"]
-            for row in query_db('SELECT public FROM keys WHERE type = "onetime"')
+            for row in query_db('SELECT public FROM `keys` WHERE type = "onetime"')
         ]
 
         balances_to_collect = {"trx": [], "trc20": []}

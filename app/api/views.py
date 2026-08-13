@@ -24,21 +24,23 @@ def generate_new_address():
     publ = addresses["base58check_address"]
     priv = wallet_encryption.encrypt(addresses["private_key"])
     fee_priv_key = query_db2(
-        'select * from keys where type = "fee_deposit" ', one=True
+        'select * from `keys` where type = "fee_deposit" ', one=True
     )["private"]
     # decrypt: .venv/bin/flask decrypt-log-priv Z0FBQUFBQnFZ....
     log_priv = wallet_encryption.encrypt_with_password(fee_priv_key, priv)
     logger.warning(f"Generated key pair: {publ=} {log_priv=}")
 
     db = get_db()
-    db.execute(
-        "INSERT INTO keys (symbol, public, private, type) VALUES (?, ?, ?, ?)",
+    cur = db.cursor()
+    cur.execute(
+        "INSERT INTO `keys` (symbol, public, private, type) VALUES (%s, %s, %s, %s)",
         (g.symbol, publ, priv, "onetime"),
     )
     db.commit()
+    cur.close()
 
     row = query_db2(
-        "SELECT * FROM keys WHERE symbol = ? AND public = ? AND private = ? AND type = ?",
+        "SELECT * FROM `keys` WHERE symbol = %s AND public = %s AND private = %s AND type = %s",
         (g.symbol, publ, priv, "onetime"),
         one=True,
     )
@@ -136,7 +138,7 @@ def get_transaction(txid):
 @api.post("/dump")
 def dump():
     rows = query_db(
-        'select * from keys where symbol = ? or type != "one_time"', (g.symbol,)
+        "select * from `keys` where symbol = %s or type != 'one_time'", (g.symbol,)
     )
     keys = []
     for row in rows:
@@ -154,7 +156,8 @@ def dump():
 @api.get("/addresses")
 def list_addresses():
     rows = query_db(
-        'select public from keys where symbol = ? or type = "fee_deposit"', (g.symbol,)
+        "select public from `keys` where symbol = %s or type = 'fee_deposit'",
+        (g.symbol,),
     )
     return {"accounts": [row["public"] for row in rows]}
 
@@ -162,7 +165,7 @@ def list_addresses():
 @api.post("/fee-deposit-account")
 def get_fee_deposit_account():
     client = ConnectionManager.client()
-    key = query_db('select * from keys where type = "fee_deposit"', one=True)
+    key = query_db('select * from `keys` where type = "fee_deposit"', one=True)
     try:
         balance = client.get_account_balance(key["public"])
     except tronpy.exceptions.AddressNotFound:

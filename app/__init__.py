@@ -19,11 +19,6 @@ celery = Celery(
     result_accept_content=["pickle"],
 )
 
-import decimal, sqlite3
-
-sqlite3.register_adapter(decimal.Decimal, lambda x: str(x))
-sqlite3.register_converter("DECTEXT", lambda x: decimal.Decimal(x.decode()))
-
 
 def create_app():
     from flask.config import Config
@@ -52,7 +47,7 @@ def create_app():
     block_scanner.BlockScanner.set_watched_accounts(
         [
             row["public"]
-            for row in db.query_db2('select public from keys where type = "onetime"')
+            for row in db.query_db2('select public from `keys` where type = "onetime"')
         ]
     )
 
@@ -62,7 +57,7 @@ def create_app():
 
     # add fee-deposit account to watch list
     block_scanner.BlockScanner.add_watched_account(
-        db.query_db2('select * from keys where type = "fee_deposit" ', one=True)[
+        db.query_db2('select * from `keys` where type = "fee_deposit" ', one=True)[
             "public"
         ]
     )
@@ -95,7 +90,7 @@ def create_app():
         LOG_PRIV: the encrypted value printed in the log (log_priv= field).
         """
         fee_priv_key = query_db2(
-            'select * from keys where type = "fee_deposit" ', one=True
+            'select * from `keys` where type = "fee_deposit" ', one=True
         )["private"]
         if not fee_priv_key:
             raise click.ClickException("fee_deposit key unavailable")

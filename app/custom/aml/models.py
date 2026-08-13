@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, Text, func
 
 from ...schemas import TronSymbol, TronAddress
 
@@ -19,7 +19,7 @@ class Transaction(SQLModel, table=True):
     amount: Decimal = Field(default=0, max_digits=52, decimal_places=18)
     address: TronAddress
     uid: str | None = None
-    data: str | None = None
+    data: str | None = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(sa_column=Column(DateTime, default=func.now()))
     updated_at: datetime = Field(
         sa_column=Column(DateTime, default=func.now(), onupdate=func.now())

@@ -141,7 +141,7 @@ def recheck_transactions(self):
 def sweep_accounts(self):
     accounts = [
         row["public"]
-        for row in query_db('SELECT public FROM keys WHERE type = "onetime"')
+        for row in query_db('SELECT public FROM `keys` WHERE type = "onetime"')
     ]
     logger.info(f"sweeping {len(accounts)} accounts")
     for account in accounts:

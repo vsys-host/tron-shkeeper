@@ -40,14 +40,14 @@ class wallet_encryption:
     def encrypt_db(cls):
         from .db import query_db2
 
-        rows = query_db2("SELECT * FROM keys")
+        rows = query_db2("SELECT * FROM `keys`")
         for row in rows:
             try:
                 tronpy.keys.PrivateKey(bytes.fromhex(row["private"]))
                 # encrypting
                 encrypted_private_key = cls.encrypt(row["private"])
                 query_db2(
-                    "UPDATE keys SET private = ? WHERE public = ?",
+                    "UPDATE `keys` SET private = %s WHERE public = %s",
                     (encrypted_private_key, row["public"]),
                 )
                 logger.info(f"{row['public']} account encrypted")
@@ -116,9 +116,11 @@ class wallet_encryption:
 
         db_encrypted = None
         if table_exists := query_db2(
-            "SELECT * FROM sqlite_master WHERE type='table' AND name='keys'", one=True
+            "SELECT * FROM information_schema.tables "
+            "WHERE table_schema = DATABASE() AND table_name = 'keys'",
+            one=True,
         ):
-            if first_key := query_db2("SELECT private FROM keys LIMIT 1", one=True):
+            if first_key := query_db2("SELECT private FROM `keys` LIMIT 1", one=True):
                 try:
                     tronpy.keys.PrivateKey(bytes.fromhex(first_key["private"]))
                     db_encrypted = False

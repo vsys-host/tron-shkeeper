@@ -91,7 +91,7 @@ class BlockScanner:
 
     @functools.cached_property
     def main_account(self):
-        return query_db2('select * from keys where type = "fee_deposit" ', one=True)[
+        return query_db2('select * from `keys` where type = "fee_deposit" ', one=True)[
             "public"
         ]
 
@@ -111,7 +111,7 @@ class BlockScanner:
                     f"Last seen block is set to full node height {last_block_num}"
                 )
             query_db2(
-                'INSERT INTO settings VALUES ("last_seen_block_num", ?)',
+                "INSERT INTO settings VALUES ('last_seen_block_num', %s)",
                 (last_block_num,),
             )
         return last_block_num
@@ -119,7 +119,7 @@ class BlockScanner:
     def set_last_seen_block_num(self, block_num: int):
         start_time = time.time()
         query_db2(
-            'UPDATE settings SET value = ? WHERE name = "last_seen_block_num"',
+            "UPDATE settings SET value = %s WHERE name = 'last_seen_block_num'",
             (block_num,),
         )
         logger.debug(

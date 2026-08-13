@@ -37,20 +37,21 @@ def get_filter_config():
         return {
             row["public"]: row["symbol"]
             for row in query_db(
-                'select public, symbol from keys where type = "onetime"'
+                'select public, symbol from `keys` where type = "onetime"'
             )
         }
 
 
 def add_key(type: KeyType, public=None, uniq_type=True):
-    key = query_db("select * from keys where type = ?", (type,), one=True)
+    key = query_db("select * from `keys` where type = %s", (type,), one=True)
     if key and uniq_type:
         logger.info(f"{type} account is already exists.")
     else:
         addresses = Tron().generate_address()
         db = get_db()
-        db.execute(
-            "INSERT INTO keys (symbol, public, private, type) VALUES ('_', ?, ?, ?)",
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO `keys` (symbol, public, private, type) VALUES ('_', %s, %s, %s)",
             (
                 public if public else addresses["base58check_address"],
                 "EXTERNALLY_MANAGED"
@@ -60,16 +61,19 @@ def add_key(type: KeyType, public=None, uniq_type=True):
             ),
         )
         db.commit()
+        cur.close()
         logger.info(f"{type} account has been created.")
 
 
 def get_key(type: KeyType, pub: str | None = None) -> tuple[PrivateKey | None, str]:
     if pub:
         key = query_db(
-            "select * from keys where type = ? and public = ?", (type, pub), one=True
+            "select * from `keys` where type = %s and public = %s",
+            (type, pub),
+            one=True,
         )
     else:
-        key = query_db("select * from keys where type = ?", (type,), one=True)
+        key = query_db("select * from `keys` where type = %s", (type,), one=True)
     if not key:
         logger.error(f"No key found for type {type}")
         return None, ""

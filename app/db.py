@@ -1,7 +1,8 @@
-import sqlite3
 import time
 
-from flask import current_app, g
+import pymysql
+import pymysql.cursors
+from flask import g
 from sqlalchemy import NullPool
 from sqlmodel import SQLModel, create_engine  # noqa: F401
 
@@ -28,19 +29,24 @@ engine = create_engine(
     #
     # celery -A celery_worker.celery worker -E --loglevel=info --pool=solo
     poolclass=NullPool,
+    # autocommit=True replicates the previous sqlite3 isolation_level=None
+    # (autocommit) behavior for the raw query_db/query_db2 layer below.
+    #
+    # NOTE: cursorclass is deliberately NOT overridden here. SQLAlchemy's Core/
+    # ORM query execution (used by SQLModel sessions) assumes tuple-shaped
+    # cursor rows internally; forcing pymysql.cursors.DictCursor globally
+    # breaks `conn.execute()`/`session.exec()` with `KeyError(0)`. Instead, the
+    # legacy raw query_db()/query_db2()/init_db() helpers below request
+    # DictCursor explicitly per-cursor to keep `row["column"]` access working
+    # like sqlite3.Row did, without affecting SQLModel/SQLAlchemy queries.
+    connect_args={"autocommit": True},
     # echo=True,
 )
 
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(
-            current_app.config.DATABASE,
-            detect_types=sqlite3.PARSE_DECLTYPES,
-            isolation_level=None,
-        )
-        g.db.execute("pragma journal_mode=wal;")
-        g.db.row_factory = sqlite3.Row
+        g.db = engine.raw_connection()
 
     return g.db
 
@@ -52,7 +58,8 @@ def close_db(e=None):
 
 
 def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
+    cur = get_db().cursor(pymysql.cursors.DictCursor)
+    cur.execute(query, args)
     rv = cur.fetchall()
     cur.close()
     return (rv[0] if rv else None) if one else rv
@@ -60,40 +67,32 @@ def query_db(query, args=(), one=False):
 
 def query_db2(query, args=(), one=False):
     start_time = time.time()
-    db = sqlite3.connect(
-        config.DATABASE, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None
-    )
-    db.execute("pragma journal_mode=wal;")
-    db.row_factory = sqlite3.Row
-    cur = db.execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
+    conn = engine.raw_connection()
+    try:
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        cur.execute(query, args)
+        rv = cur.fetchall()
+        cur.close()
+    finally:
+        conn.close()
     # logger.debug(f'query_db2({query}) took {time.time() - start_time} seconds')
     return (rv[0] if rv else None) if one else rv
 
 
 def init_db(app):
-    with app.app_context():
-        db = get_db()
-        with app.open_resource("schema.sql", mode="r") as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-
-def init_balances_db(app):
-    with app.app_context():
-        db = sqlite3.connect(
-            config.BALANCES_DATABASE,
-            detect_types=sqlite3.PARSE_DECLTYPES,
-            isolation_level=None,
-        )
-        db.execute("pragma journal_mode=wal;")
-        with app.open_resource("trc20balances.sql", mode="r") as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+    with app.open_resource("schema.sql", mode="r") as f:
+        statements = [s.strip() for s in f.read().split(";") if s.strip()]
+    conn = engine.raw_connection()
+    try:
+        cur = conn.cursor()
+        for statement in statements:
+            cur.execute(statement)
+        cur.close()
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def init_app(app):
     app.teardown_appcontext(close_db)
     init_db(app)
-    init_balances_db(app)

@@ -1,36 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
 
 from sqlmodel import Field, SQLModel, Column
 from sqlalchemy import DateTime, UniqueConstraint, func
 
-from .schemas import KeyType, TronSymbol, TronAddress
+from .schemas import TronSymbol, TronAddress
 
-
-class Setting(SQLModel, table=True):
-    __tablename__ = "tron_settings"
-
-    name: str = Field(primary_key=True)
-    value: str
-    created_at: datetime = Field(sa_column=Column(DateTime, default=func.now()))
-    updated_at: datetime = Field(
-        sa_column=Column(DateTime, default=func.now(), onupdate=func.now())
-    )
-
-
-class Key(SQLModel, table=True):
-    __tablename__ = "tron_keys"
-
-    id: int | None = Field(default=None, primary_key=True)
-    symbol: TronSymbol
-    type: KeyType
-    public: TronAddress
-    private: str
-    created_at: datetime = Field(sa_column=Column(DateTime, default=func.now()))
-    updated_at: datetime = Field(
-        sa_column=Column(DateTime, default=func.now(), onupdate=func.now())
-    )
+# NOTE: `Setting` (tron_settings) and `Key` (tron_keys) ORM models used to live
+# here, but they were never queried anywhere in the codebase - the real
+# `settings`/`keys` tables are accessed via the raw query_db/query_db2 layer in
+# app/db.py (see app/schema.sql). They were removed as dead code as part of the
+# SQLite -> MySQL migration.
 
 
 class Balance(SQLModel, table=True):
