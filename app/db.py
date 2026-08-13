@@ -8,7 +8,6 @@ from sqlmodel import SQLModel, create_engine  # noqa: F401
 
 from .config import config
 from . import models
-from .custom.aml import models  # noqa: F401, F811
 
 engine = create_engine(
     config.DB_URI,

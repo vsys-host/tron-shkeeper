@@ -2,10 +2,9 @@ from decimal import Decimal
 from functools import cache
 from typing import List
 
-from pydantic import Field, Json, field_validator
+from pydantic import Field, Json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .custom.aml.schemas import ExternalDrain
 from .schemas import TronFullnode, TronNetwork, Token, TronSymbol, SrVote
 from .exceptions import UnknownToken
 
@@ -57,12 +56,6 @@ class Settings(BaseSettings):
     DEVMODE_ENCRYPTION_PW: str | None = None
     DEVMODE_SKIP_NOTIFICATIONS: bool = False
     DEVMODE_CELERY_NODELAY: bool = False
-    # AML
-    EXTERNAL_DRAIN_CONFIG: ExternalDrain | None = None
-    DELAY_AFTER_FEE_TRANSFER: float = 60
-    AML_RESULT_UPDATE_PERIOD: int = 120
-    AML_SWEEP_ACCOUNTS_PERIOD: int = 3600
-    AML_WAIT_BEFORE_API_CALL: int = 320
     # Resource delegation
     ENERGY_DELEGATION_MODE: bool = False
     ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_FOR_BANDWITH: bool = False
@@ -150,26 +143,4 @@ class Settings(BaseSettings):
     def __hash__(self):
         return hash(42)
 
-    @field_validator("EXTERNAL_DRAIN_CONFIG", mode="after")
-    @classmethod
-    def validate_external_drain_config_states(
-        cls, value: ExternalDrain | None
-    ) -> ExternalDrain | None:
-        if value is None:
-            return value
-
-        aml_check = value.aml_check.state == "enabled"
-        regular_split = value.regular_split.state == "enabled"
-        if not (aml_check or regular_split):
-            raise ValueError(
-                f"At least one workflow should be enabled for EXTERNAL_DRAIN_CONFIG: {aml_check=} {regular_split=}"
-            )
-        return value
-
-
 config = Settings()
-
-if config.EXTERNAL_DRAIN_CONFIG:
-    from .logging import logger
-
-    logger.info(config.EXTERNAL_DRAIN_CONFIG.model_dump_json(indent=4))

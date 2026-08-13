@@ -6,8 +6,7 @@ It:
 1. Waits for the configured MySQL/MariaDB server (config.DB_URI) to become
    reachable.
 2. Creates the schema: the raw `keys`/`settings` tables (app/schema.sql) plus the
-   SQLModel-managed tables (tron_balances, tron_aml_transactions,
-   tron_aml_payouts).
+    SQLModel-managed tables (tron_balances).
 3. If this is an upgrade from a previous SQLite-based installation, copies the
    legacy data (data/database.db, data/tron.db) into MySQL exactly once.
 
@@ -84,9 +83,8 @@ def create_schema() -> None:
     finally:
         conn.close()
 
-    # app.models / app.custom.aml.models are already imported as a side effect of
-    # `from app.db import engine` above (see app/db.py), so SQLModel.metadata
-    # already knows about Balance/Transaction/Payout.
+    # app.models is already imported as a side effect of `from app.db import
+    # engine` above (see app/db.py), so SQLModel.metadata knows about Balance.
     SQLModel.metadata.create_all(engine)
     log("Schema created/verified.")
 
@@ -256,10 +254,6 @@ def migrate_legacy_sqlite() -> None:
             log(f"Reading legacy {LEGACY_TRON_DB} ...")
             before_counts = {
                 "tron_balances": _count_mysql_rows(mysql_conn, "tron_balances"),
-                "tron_aml_transactions": _count_mysql_rows(
-                    mysql_conn, "tron_aml_transactions"
-                ),
-                "tron_aml_payouts": _count_mysql_rows(mysql_conn, "tron_aml_payouts"),
             }
             log(f"Before tron.db migration baseline: {before_counts}")
             mysql_conn.autocommit(False)
@@ -296,80 +290,6 @@ def migrate_legacy_sqlite() -> None:
                         balance_rows = []
                         log("tron.db tron_balances table not found; skipping migration for it.")
 
-                    if _sqlite_table_exists(src, "tron_aml_transactions"):
-                        log("Loading tron_aml_transactions from tron.db")
-                        tx_rows = [
-                            (
-                                r["id"],
-                                r["tx_id"],
-                                r["status"],
-                                r["ttype"],
-                                str(r["score"]),
-                                r["crypto"],
-                                str(r["amount"]),
-                                r["address"],
-                                r["uid"],
-                                r["data"],
-                                r["created_at"],
-                                r["updated_at"],
-                            )
-                            for r in src.execute(
-                                "SELECT id, tx_id, status, ttype, score, crypto, amount, "
-                                "address, uid, data, created_at, updated_at "
-                                "FROM tron_aml_transactions"
-                            )
-                        ]
-                        log(
-                            f"tron.db tron_aml_transactions source row count: {len(tx_rows)}"
-                        )
-                        counts["tron_aml_transactions"] = _copy_rows(
-                            mysql_conn,
-                            "INSERT IGNORE INTO tron_aml_transactions "
-                            "(id, tx_id, status, ttype, score, crypto, amount, address, "
-                            "uid, data, created_at, updated_at) "
-                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                            tx_rows,
-                            "tron_aml_transactions",
-                        )
-                    else:
-                        tx_rows = []
-                        log("tron.db tron_aml_transactions table not found; skipping migration for it.")
-
-                    if _sqlite_table_exists(src, "tron_aml_payouts"):
-                        log("Loading tron_aml_payouts from tron.db")
-                        payout_rows = [
-                            (
-                                r["id"],
-                                r["tx_id"],
-                                r["external_tx_id"],
-                                r["status"],
-                                r["dtype"],
-                                r["crypto"],
-                                str(r["amount_calc"]),
-                                str(r["amount_send"]),
-                                r["address"],
-                                r["created_at"],
-                                r["updated_at"],
-                            )
-                            for r in src.execute(
-                                "SELECT id, tx_id, external_tx_id, status, dtype, crypto, "
-                                "amount_calc, amount_send, address, created_at, updated_at "
-                                "FROM tron_aml_payouts"
-                            )
-                        ]
-                        log(f"tron.db tron_aml_payouts source row count: {len(payout_rows)}")
-                        counts["tron_aml_payouts"] = _copy_rows(
-                            mysql_conn,
-                            "INSERT IGNORE INTO tron_aml_payouts "
-                            "(id, tx_id, external_tx_id, status, dtype, crypto, "
-                            "amount_calc, amount_send, address, created_at, updated_at) "
-                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                            payout_rows,
-                            "tron_aml_payouts",
-                        )
-                    else:
-                        payout_rows = []
-                        log("tron.db tron_aml_payouts table not found; skipping migration for it.")
                 finally:
                     src.close()
 
@@ -377,8 +297,6 @@ def migrate_legacy_sqlite() -> None:
                     mysql_conn,
                     {
                         "tron_balances": len(balance_rows),
-                        "tron_aml_transactions": len(tx_rows),
-                        "tron_aml_payouts": len(payout_rows),
                     },
                     before_counts,
                     "tron.db",
