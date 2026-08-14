@@ -23,6 +23,7 @@ from .exceptions import (
     BadContractResult,
 )
 from .connection_manager import ConnectionManager
+from .repositories import AllStoresKeyReader
 
 
 class BlockScanner:
@@ -89,11 +90,6 @@ class BlockScanner:
     def count_watched_accounts(cls):
         return len(cls.WATCHED_ACCOUNTS)
 
-    @functools.cached_property
-    def main_account(self):
-        return query_db2('select * from `keys` where type = "fee_deposit" ', one=True)[
-            "public"
-        ]
 
     def get_last_seen_block_num(self) -> int:
         row = query_db2(
@@ -180,6 +176,7 @@ class BlockScanner:
         from .tasks import transfer_trc20_from, transfer_trx_from
 
         try:
+            key_reader = AllStoresKeyReader()
             block = self.download_block(block_num)
             if "transactions" not in block:
                 logger.debug(f"Block {block_num}: No transactions")
@@ -218,11 +215,11 @@ class BlockScanner:
                 for tron_tx in tron_tx_list:
                     if (
                         tron_tx.symbol == "TRX"
-                        and tron_tx.src_addr == self.main_account
+                        and tron_tx.src_addr in valid_addresses
                         and tron_tx.dst_addr in valid_addresses
                     ):
                         logger.info(
-                            f"Ignoring TRX transaction from main to onetime acc: {tron_tx}"
+                            f"Ignoring local TRX tx: {tron_tx}"
                         )
                         continue
 
@@ -230,15 +227,24 @@ class BlockScanner:
                         if tron_tx.status == "SUCCESS":
                             logger.info(f"Sending notification for {tron_tx}")
                             self.notify_shkeeper(tron_tx.symbol.value, tron_tx.txid)
+                            store_id = key_reader.get_store_id_by_public(
+                                tron_tx.dst_addr
+                            )
+                            if store_id is None:
+                                logger.warning(
+                                    "Skipping sweep for watched address without an "
+                                    f"owner: {tron_tx.dst_addr}"
+                                )
+                                continue
                             # Send funds to main account
                             if tron_tx.is_trc20:
                                 if config.DEVMODE_CELERY_NODELAY:
                                     transfer_trc20_from(
-                                        tron_tx.dst_addr, tron_tx.symbol
+                                        tron_tx.dst_addr, tron_tx.symbol, store_id
                                     )
                                 else:
                                     transfer_trc20_from.delay(
-                                        tron_tx.dst_addr, tron_tx.symbol
+                                        tron_tx.dst_addr, tron_tx.symbol, store_id
                                     )
                             else:
                                 if config.ENERGY_DELEGATION_MODE:
@@ -247,7 +253,9 @@ class BlockScanner:
                                     # if the account does not hold TRC20 tokens.
                                     pass
                                 else:
-                                    transfer_trx_from.delay(tron_tx.dst_addr)
+                                    transfer_trx_from.delay(
+                                        tron_tx.dst_addr, store_id
+                                    )
                         else:
                             logger.warning(
                                 f"Not sending notification for tx with status {tron_tx.status}: {tron_tx}"

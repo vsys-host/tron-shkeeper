@@ -3,11 +3,9 @@ import time
 import pymysql
 import pymysql.cursors
 from flask import g
-from sqlalchemy import NullPool
-from sqlmodel import SQLModel, create_engine  # noqa: F401
+from sqlalchemy import NullPool, create_engine
 
 from .config import config
-from . import models
 
 engine = create_engine(
     config.DB_URI,
@@ -32,12 +30,7 @@ engine = create_engine(
     # (autocommit) behavior for the raw query_db/query_db2 layer below.
     #
     # NOTE: cursorclass is deliberately NOT overridden here. SQLAlchemy's Core/
-    # ORM query execution (used by SQLModel sessions) assumes tuple-shaped
-    # cursor rows internally; forcing pymysql.cursors.DictCursor globally
-    # breaks `conn.execute()`/`session.exec()` with `KeyError(0)`. Instead, the
-    # legacy raw query_db()/query_db2()/init_db() helpers below request
-    # DictCursor explicitly per-cursor to keep `row["column"]` access working
-    # like sqlite3.Row did, without affecting SQLModel/SQLAlchemy queries.
+    # Raw query helpers request DictCursor explicitly per cursor.
     connect_args={"autocommit": True},
     # echo=True,
 )

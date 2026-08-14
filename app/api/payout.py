@@ -42,7 +42,7 @@ def multipayout():
         if transfer["amount"] <= 0:
             raise Exception(f"Payout amount should be a positive number: {transfer}")
 
-    wallet = Wallet(g.symbol)
+    wallet = Wallet(g.symbol, store_id=g.store_id)
     balance = wallet.balance
     need_tokens = sum([transfer["amount"] for transfer in payout_list])
     if balance < need_tokens:
@@ -50,7 +50,7 @@ def multipayout():
         # raise Exception(f"Not enough {g.symbol} tokens to make all payouts. Has: {balance}, need: {need_tokens}")
 
     need_currency = len(payout_list) * config.TX_FEE
-    trx_balance = Wallet().balance
+    trx_balance = Wallet(store_id=g.store_id).balance
     if trx_balance < need_currency:
         raise Exception(
             f"Not enough TRX tokens at fee-deposit account {wallet.main_account} to pay payout fees. "
@@ -70,7 +70,10 @@ def multipayout():
         }
 
     task = (
-        prepare_multipayout.s(payout_list, g.symbol) | payout_task.s(g.symbol)
+        prepare_multipayout.s(
+            payout_list, g.symbol, store_id=g.store_id
+        )
+        | payout_task.s(g.symbol, store_id=g.store_id)
     ).apply_async()
     return {"task_id": task.id}
 
@@ -78,7 +81,8 @@ def multipayout():
 @api.post("/payout/<to>/<decimal:amount>")
 def payout(to, amount):
     task = (
-        prepare_payout.s(to, amount, g.symbol) | payout_task.s(g.symbol)
+        prepare_payout.s(to, amount, g.symbol, store_id=g.store_id)
+        | payout_task.s(g.symbol, store_id=g.store_id)
     ).apply_async()
     return {"task_id": task.id}
 

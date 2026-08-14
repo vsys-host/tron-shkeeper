@@ -1,5 +1,6 @@
 from decimal import Decimal
 from typing import Literal
+from flask import g
 
 
 from app.utils import get_energy_delegator, get_key
@@ -32,7 +33,7 @@ def get_staking_info():
         tron_client: Tron = ConnectionManager.client()
 
         # Get fee deposit account
-        _, fee_deposit_address = get_key(KeyType.fee_deposit)
+        _, fee_deposit_address = get_key(KeyType.fee_deposit, store_id=g.store_id)
         fee_deposit_status = "unknown"
         fee_deposit_info = None
 
@@ -44,7 +45,9 @@ def get_staking_info():
                 fee_deposit_status = False
 
         # Get energy delegator account (might be different from fee_deposit)
-        energy_delegator_priv, energy_delegator_address = get_energy_delegator()
+        energy_delegator_priv, energy_delegator_address = get_energy_delegator(
+            store_id=g.store_id
+        )
         energy_delegator_status = None
         energy_delegator_info = None
 
@@ -104,7 +107,7 @@ def get_staking_info():
 def get_resources(address):
     try:
         if not address:
-            _, address = get_energy_delegator()
+            _, address = get_energy_delegator(store_id=g.store_id)
         tron_client: Tron = ConnectionManager.client()
         account_info = tron_client.get_account(address)
 
@@ -137,7 +140,9 @@ def get_resources(address):
 
 @staking_bp.post("/freeze/<int:amount>/<string:res_type>")
 def stake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
 
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.freeze_balance(
@@ -154,7 +159,9 @@ def stake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
 
 @staking_bp.post("/unfreeze/<int:amount>/<string:res_type>")
 def unstake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.unfreeze_balance(
         owner=energy_delegator_pub,
@@ -170,7 +177,9 @@ def unstake_trx(amount: int, res_type: Literal["ENERGY", "BANDWIDTH"]):
 
 @staking_bp.post("/withdraw_unfreezed")
 def withdraw_unstaked_trx():
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.withdraw_stake_balance(
         owner=energy_delegator_pub
@@ -184,7 +193,9 @@ def withdraw_unstaked_trx():
 
 @staking_bp.post("/claim_voting_reward")
 def claim_voting_reward():
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.withdraw_rewards(owner=energy_delegator_pub).build()
     signed_tx = unsigned_tx.sign(energy_delegator_priv)
@@ -196,7 +207,9 @@ def claim_voting_reward():
 
 @staking_bp.post("/withdraw_stake_balance")
 def withdraw_stake_balance():
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
     tron_client: Tron = ConnectionManager.client()
     unsigned_tx = tron_client.trx.withdraw_stake_balance(
         owner=energy_delegator_pub
@@ -210,7 +223,9 @@ def withdraw_stake_balance():
 
 @staking_bp.post("/delegate/<string:address>/<string:amount>/<string:res_type>")
 def delegate(address: str, amount: str, res_type: Literal["ENERGY", "BANDWIDTH"]):
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
     tron_client: Tron = ConnectionManager.client()
     sun = int(Decimal(amount) * 1_000_000)
     unsigned_tx = tron_client.trx.delegate_resource(
@@ -230,7 +245,9 @@ def delegate(address: str, amount: str, res_type: Literal["ENERGY", "BANDWIDTH"]
 
 @staking_bp.post("/undelegate/<string:address>/<string:amount>/<string:res_type>")
 def undelegate(address: str, amount: str, res_type: Literal["ENERGY", "BANDWIDTH"]):
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=g.store_id
+    )
     tron_client: Tron = ConnectionManager.client()
     sun = int(Decimal(amount) * 1_000_000)
     unsigned_tx = tron_client.trx.undelegate_resource(

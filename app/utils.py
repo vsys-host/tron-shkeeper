@@ -18,10 +18,22 @@ import requests
 from app.schemas import KeyType, TronAddress
 
 from .config import config
-from .db import get_db, query_db, query_db2
 from .logging import logger
 from .connection_manager import ConnectionManager
 from .wallet_encryption import wallet_encryption
+from .repositories import KeyRepository
+
+
+key_repository = KeyRepository(store_id=1)
+
+
+def _tenant_logger(store_id: int):
+    class TenantLoggerAdapter(logging.LoggerAdapter):
+        def process(self, msg, kwargs):
+            store_id = self.extra.get("store_id") if self.extra else None
+            return f"[store_id={store_id}] {msg}", kwargs
+
+    return TenantLoggerAdapter(logger, {"store_id": store_id})
 
 
 class DecimalConverter(BaseConverter):
@@ -32,48 +44,36 @@ class DecimalConverter(BaseConverter):
         return BaseConverter.to_url(value)
 
 
-def get_filter_config():
-    with current_app.app_context():
-        return {
-            row["public"]: row["symbol"]
-            for row in query_db(
-                'select public, symbol from `keys` where type = "onetime"'
-            )
-        }
 
 
-def add_key(type: KeyType, public=None, uniq_type=True):
-    key = query_db("select * from `keys` where type = %s", (type,), one=True)
+def add_key(type: KeyType, public=None, uniq_type=True, store_id: int = 1):
+    logger = _tenant_logger(store_id)
+    key_repository = KeyRepository(store_id=store_id)
+    key = key_repository.get_by_type(type)
     if key and uniq_type:
         logger.info(f"{type} account is already exists.")
     else:
         addresses = Tron().generate_address()
-        db = get_db()
-        cur = db.cursor()
-        cur.execute(
-            "INSERT INTO `keys` (symbol, public, private, type) VALUES ('_', %s, %s, %s)",
-            (
-                public if public else addresses["base58check_address"],
-                "EXTERNALLY_MANAGED"
-                if public
-                else wallet_encryption.encrypt(addresses["private_key"]),
-                type,
-            ),
+        key_repository.create_external_key(
+            type,
+            public if public else addresses["base58check_address"],
+            "EXTERNALLY_MANAGED"
+            if public
+            else wallet_encryption.encrypt(addresses["private_key"]),
         )
-        db.commit()
-        cur.close()
         logger.info(f"{type} account has been created.")
 
 
-def get_key(type: KeyType, pub: str | None = None) -> tuple[PrivateKey | None, str]:
-    if pub:
-        key = query_db(
-            "select * from `keys` where type = %s and public = %s",
-            (type, pub),
-            one=True,
-        )
-    else:
-        key = query_db("select * from `keys` where type = %s", (type,), one=True)
+def get_key(
+    type: KeyType, pub: str | None = None, store_id: int = 1
+) -> tuple[PrivateKey | None, str]:
+    logger = _tenant_logger(store_id)
+    key_repository = KeyRepository(store_id=store_id)
+    key = (
+        key_repository.get_by_public_and_type(pub, type)
+        if pub
+        else key_repository.get_by_type(type)
+    )
     if not key:
         logger.error(f"No key found for type {type}")
         return None, ""
@@ -83,9 +83,9 @@ def get_key(type: KeyType, pub: str | None = None) -> tuple[PrivateKey | None, s
     return PrivateKey(bytes.fromhex(private_key)), key["public"]
 
 
-def init_wallet(app: Flask):
+def init_wallet(app: Flask, store_id: int = 1):
     with app.app_context():
-        add_key(KeyType.fee_deposit)
+        add_key(KeyType.fee_deposit, store_id=store_id)
         if (
             config.ENERGY_DELEGATION_MODE
             and config.ENERGY_DELEGATION_MODE_SEPARATE_BALANCE_AND_ENERGY_ACCOUNTS
@@ -94,14 +94,16 @@ def init_wallet(app: Flask):
                 add_key(
                     KeyType.energy,
                     public=config.ENERGY_DELEGATION_MODE_ENERGY_ACCOUNT_PUB_KEY,
+                    store_id=store_id,
                 )
             else:
                 add_key(
                     KeyType.energy,
+                    store_id=store_id,
                 )
 
 
-def get_energy_delegator() -> tuple[PrivateKey, str]:
+def get_energy_delegator(store_id: int = 1) -> tuple[PrivateKey, str]:
     if (
         config.ENERGY_DELEGATION_MODE
         and config.ENERGY_DELEGATION_MODE_SEPARATE_BALANCE_AND_ENERGY_ACCOUNTS
@@ -109,13 +111,13 @@ def get_energy_delegator() -> tuple[PrivateKey, str]:
         if config.ENERGY_DELEGATION_MODE_ENERGY_ACCOUNT_PUB_KEY:
             # If an energy account public key is provided, assume the fee_deposit account
             # has permission to delegate energy from the energy account
-            priv, _ = get_key(KeyType.fee_deposit)
-            _, pub = get_key(KeyType.energy)
+            priv, _ = get_key(KeyType.fee_deposit, store_id=store_id)
+            _, pub = get_key(KeyType.energy, store_id=store_id)
             return priv, pub
         else:
-            return get_key(KeyType.energy)
+            return get_key(KeyType.energy, store_id=store_id)
     else:
-        return get_key(KeyType.fee_deposit)
+        return get_key(KeyType.fee_deposit, store_id=store_id)
 
 
 def estimateenergy(src, dst, amount, symbol):

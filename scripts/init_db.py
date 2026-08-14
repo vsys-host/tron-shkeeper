@@ -5,8 +5,7 @@ It:
 
 1. Waits for the configured MySQL/MariaDB server (config.DB_URI) to become
    reachable.
-2. Creates the schema: the raw `keys`/`settings` tables (app/schema.sql) plus the
-    SQLModel-managed tables (tron_balances).
+2. Creates the schema from app/schema.sql, including the tron_balances table.
 3. If this is an upgrade from a previous SQLite-based installation, copies the
    legacy data (data/database.db, data/tron.db) into MySQL exactly once.
 
@@ -34,7 +33,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from app.db import engine  # noqa: E402
 from app.config import config  # noqa: E402
-from sqlmodel import SQLModel  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA_SQL = REPO_ROOT / "app" / "schema.sql"
@@ -83,9 +81,6 @@ def create_schema() -> None:
     finally:
         conn.close()
 
-    # app.models is already imported as a side effect of `from app.db import
-    # engine` above (see app/db.py), so SQLModel.metadata knows about Balance.
-    SQLModel.metadata.create_all(engine)
     log("Schema created/verified.")
 
 

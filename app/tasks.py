@@ -5,6 +5,7 @@ import datetime
 import decimal
 from functools import cache, lru_cache
 import json
+import logging
 import math
 import sqlite3
 import time
@@ -19,14 +20,12 @@ from tronpy.tron import current_timestamp
 from tronpy.abi import trx_abi
 import tronpy.exceptions
 import requests
-from sqlmodel import Session, select
-
 from app.schemas import KeyType
 
 from . import celery
 from .config import config
-from .db import query_db, query_db2
 from .wallet import Wallet
+from .repositories import AllStoresKeyReader, BalanceRepository, KeyRepository
 from .utils import (
     est_vote_tx_bw_cons,
     get_energy_delegator,
@@ -39,9 +38,18 @@ from .logging import logger
 from .wallet_encryption import wallet_encryption
 
 
+def _tenant_logger(store_id: int):
+    class TenantLoggerAdapter(logging.LoggerAdapter):
+        def process(self, msg, kwargs):
+            store_id = self.extra.get("store_id") if self.extra else None
+            return f"[store_id={store_id}] {msg}", kwargs
+
+    return TenantLoggerAdapter(logger, {"store_id": store_id})
+
+
 @celery.task()
-def prepare_payout(dest, amount, symbol):
-    if (balance := Wallet(symbol).balance) < amount:
+def prepare_payout(dest, amount, symbol, store_id: int = 1):
+    if (balance := Wallet(symbol, store_id=store_id).balance) < amount:
         raise Exception(
             f"Wallet balance is less than payout amount: {balance} < {amount}"
         )
@@ -56,7 +64,8 @@ def prepare_payout(dest, amount, symbol):
 
 
 @celery.task()
-def prepare_multipayout(payout_list, symbol):
+def prepare_multipayout(payout_list, symbol, store_id: int = 1):
+    logger = _tenant_logger(store_id)
     logger.info(
         f"Preparing payout for {sum([t['amount'] for t in payout_list])} "
         f"{symbol} to {len(payout_list)} destinations."
@@ -73,23 +82,24 @@ def prepare_multipayout(payout_list, symbol):
 
 
 @celery.task()
-def payout(steps, symbol):
-    wallet = Wallet(symbol)
+def payout(steps, symbol, store_id: int = 1):
+    wallet = Wallet(symbol, store_id=store_id)
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=config.CONCURRENT_MAX_WORKERS
     ) as executor:
         payout_results = list(
             executor.map(lambda x: wallet.transfer(x["dst"], x["amount"]), steps)
         )
-    post_payout_results.delay(payout_results, symbol)
+    post_payout_results.delay(payout_results, symbol, store_id)
     return payout_results
 
 
 @celery.task()
-def transfer_trc20_from(onetime_acc, symbol):
+def transfer_trc20_from(onetime_acc, symbol, store_id: int = 1):
     """
     Transfers TRC20 from onetime to main account
     """
+    logger = _tenant_logger(store_id)
 
     tron_client = ConnectionManager.client()
 
@@ -97,7 +107,7 @@ def transfer_trc20_from(onetime_acc, symbol):
     contract = tron_client.get_contract(contract_address)
     precision = contract.functions.decimals()
 
-    main_priv_key, main_publ_key = get_key(KeyType.fee_deposit)
+    main_priv_key, main_publ_key = get_key(KeyType.fee_deposit, store_id=store_id)
 
     if onetime_acc == main_publ_key:
         logger.warning(
@@ -105,8 +115,12 @@ def transfer_trc20_from(onetime_acc, symbol):
         )
         return False
 
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
-    onetime_priv_key, onetime_publ_key = get_key(KeyType.onetime, pub=onetime_acc)
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=store_id
+    )
+    onetime_priv_key, onetime_publ_key = get_key(
+        KeyType.onetime, pub=onetime_acc, store_id=store_id
+    )
 
     token_balance = contract.functions.balanceOf(onetime_publ_key)
 
@@ -411,20 +425,23 @@ def transfer_trc20_from(onetime_acc, symbol):
 
     if config.ENERGY_DELEGATION_MODE:
         if config.DEVMODE_CELERY_NODELAY:
-            undelegate_energy(onetime_publ_key)
+            undelegate_energy(onetime_publ_key, store_id=store_id)
         else:
-            undelegate_energy.delay(onetime_publ_key)
+            undelegate_energy.delay(onetime_publ_key, store_id=store_id)
 
     return {"tx_trx_res": tx_trx_res, "tx_token": tx_token_res}
 
 
 @celery.task()
-def undelegate_energy(receiver):
+def undelegate_energy(receiver, store_id: int = 1):
+    logger = _tenant_logger(store_id)
     logger.info(f"Undelegating energy from onetime account {receiver}")
 
     tron_client = ConnectionManager.client()
 
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=store_id
+    )
 
     result = tron_client.get_delegated_resource_v2(
         fromAddr=energy_delegator_pub, toAddr=receiver
@@ -468,20 +485,23 @@ def undelegate_energy(receiver):
 
 
 @celery.task()
-def transfer_trx_from(onetime_publ_key):
+def transfer_trx_from(onetime_publ_key, store_id: int = 1):
     """
     Transfers TRX from onetime to main account
     """
+    logger = _tenant_logger(store_id)
     logger.info(f"Starting TRX transfer from onetime account {onetime_publ_key}")
-    main_publ_key = query_db2(
-        'select * from `keys` where type = "fee_deposit" ', one=True
-    )["public"]
+    key_repository = KeyRepository(store_id=store_id)
+    main_key = key_repository.get_fee_deposit_key()
+    if not main_key:
+        raise RuntimeError("fee_deposit key unavailable")
+    main_publ_key = main_key["public"]
 
     if main_publ_key == onetime_publ_key:
         logger.warning("Skipping TRX transfer from main account.")
         return {"status": "error", "error": "Skipping TRX transfer from main account."}
 
-    bw = Wallet().bandwidth_of(onetime_publ_key)
+    bw = Wallet(store_id=store_id).bandwidth_of(onetime_publ_key)
     if bw < config.BANDWIDTH_PER_TRX_TRANSFER:
         logger.info(
             f"{onetime_publ_key} has not enough bandwidth "
@@ -490,16 +510,13 @@ def transfer_trx_from(onetime_publ_key):
         return
 
     tron_client = ConnectionManager.client()
+    onetime_key = key_repository.get_by_public_and_type(
+        onetime_publ_key, "onetime"
+    )
+    if not onetime_key:
+        raise RuntimeError(f"onetime key unavailable: {onetime_publ_key}")
     onetime_priv_key = PrivateKey(
-        bytes.fromhex(
-            wallet_encryption.decrypt(
-                query_db2(
-                    "select * from `keys` where type = 'onetime' and public = %s",
-                    (onetime_publ_key,),
-                    one=True,
-                )["private"]
-            )
-        )
+        bytes.fromhex(wallet_encryption.decrypt(onetime_key["private"]))
     )
 
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
@@ -520,7 +537,8 @@ def transfer_trx_from(onetime_publ_key):
 
 
 @celery.task()
-def post_payout_results(data, symbol):
+def post_payout_results(data, symbol, store_id: int = 1):
+    logger = _tenant_logger(store_id)
     while True:
         try:
             return requests.post(
@@ -558,254 +576,239 @@ def scan_accounts(self, *args, **kwargs):
     saves it to database and transfers to main account.
     """
 
-    from .db import engine
-    from .models import Balance
-
     task_start = time.monotonic()
+    balance_repository = BalanceRepository()
     _progress_interval = config.SCAN_ACCOUNTS_PROGRESS_LOG_INTERVAL
 
-    with Session(engine) as session:
-        stats = {
-            "balances": collections.defaultdict(Decimal),
-            "exception_num": 0,
-        }
+    stats = {
+        "balances": collections.defaultdict(Decimal),
+        "exception_num": 0,
+    }
 
-        accounts = [
-            row["public"]
-            for row in query_db('SELECT public FROM `keys` WHERE type = "onetime"')
-        ]
+    account_rows = AllStoresKeyReader().list_onetime_accounts()
+    accounts = [row["public"] for row in account_rows]
+    account_store_ids = {row["public"]: int(row["store_id"]) for row in account_rows}
 
-        balances_to_collect = {"trx": [], "trc20": []}
+    balances_to_collect = {"trx": [], "trc20": []}
 
-        total = len(accounts)
-        collection_loop_start = time.monotonic()
-        for index, account in enumerate(accounts, start=1):
-            try:
-                #
-                # TRC20
-                #
+    total = len(accounts)
+    collection_loop_start = time.monotonic()
+    for index, account in enumerate(accounts, start=1):
+        try:
+            #
+            # TRC20
+            #
 
-                for symbol in [token.symbol for token in config.get_tokens()]:
-                    contract = ConnectionManager.client().get_contract(
-                        config.get_contract_address(symbol)
-                    )
-
-                    while ret := 0 < config.CONCURRENT_MAX_RETRIES:
-                        try:
-                            trc20_balance = Decimal(
-                                contract.functions.balanceOf(account)
-                            ) / (10 ** config.get_decimal(symbol))
-                            break
-                        except tronpy.exceptions.UnknownError as e:
-                            logger.debug(
-                                f"{account} {symbol} trc20 balance fetch error: {e}"
-                            )
-                            ret += 1
-                    else:
-                        raise Exception(
-                            f"CONCURRENT_MAX_RETRIES reached while getting trc20 balance of {account}"
-                        )
-
-                    stats["balances"][symbol] += trc20_balance
-
-                    if config.SAVE_BALANCES_TO_DB:
-                        acc_balance = session.exec(
-                            select(Balance).where(
-                                Balance.account == account, Balance.symbol == symbol
-                            )
-                        ).first()
-                        if acc_balance:
-                            acc_balance.balance = trc20_balance
-
-                        else:
-                            acc_balance = Balance()
-                            acc_balance.account = account
-                            acc_balance.symbol = symbol
-                            acc_balance.balance = trc20_balance
-                        session.add(acc_balance)
-                        session.commit()
-
-                    if trc20_balance > 0:
-                        balances_to_collect["trc20"].append(
-                            [account, symbol, trc20_balance]
-                        )
-
-                #
-                # TRX
-                #
+            for symbol in [token.symbol for token in config.get_tokens()]:
+                contract = ConnectionManager.client().get_contract(
+                    config.get_contract_address(symbol)
+                )
 
                 while ret := 0 < config.CONCURRENT_MAX_RETRIES:
                     try:
-                        trx_balance = ConnectionManager.client().get_account_balance(
-                            account
-                        )
-                        break
-                    except tronpy.exceptions.AddressNotFound:
-                        trx_balance = Decimal(0)
+                        trc20_balance = Decimal(
+                            contract.functions.balanceOf(account)
+                        ) / (10 ** config.get_decimal(symbol))
                         break
                     except tronpy.exceptions.UnknownError as e:
-                        logger.debug(f"{account} TRX balance fetch error: {e}")
+                        logger.debug(
+                            f"[store_id={account_store_ids[account]}] "
+                            f"{account} {symbol} trc20 balance fetch error: {e}"
+                        )
                         ret += 1
                 else:
                     raise Exception(
-                        f"CONCURRENT_MAX_RETRIES reached while getting TRX balance of {account}"
+                        f"CONCURRENT_MAX_RETRIES reached while getting trc20 balance of {account}"
                     )
 
-                stats["balances"]["TRX"] += trx_balance
+                stats["balances"][symbol] += trc20_balance
 
                 if config.SAVE_BALANCES_TO_DB:
-                    acc_balance = session.exec(
-                        select(Balance).where(
-                            Balance.account == account, Balance.symbol == "TRX"
-                        )
-                    ).first()
-                    if acc_balance:
-                        acc_balance.balance = trx_balance
+                    balance_repository.upsert(account, symbol, trc20_balance)
 
-                    else:
-                        acc_balance = Balance()
-                        acc_balance.account = account
-                        acc_balance.symbol = "TRX"
-                        acc_balance.balance = trx_balance
-                    session.add(acc_balance)
-                    session.commit()
-
-                if trx_balance > 0:
-                    balances_to_collect["trx"].append([account, trx_balance])
-
-                logger.debug(
-                    f"Scanned {index} of {len(accounts)} accounts, found: "
-                    + ", ".join([f"{v} {k}" for k, v in stats["balances"].items()])
-                )
-                if (
-                    total > 0
-                    and (index * 100 // total) // _progress_interval
-                    > ((index - 1) * 100 // total) // _progress_interval
-                ):
-                    _now = time.monotonic()
-                    logger.info(
-                        f"scan_accounts balance collection: {index * 100 // total}% ({index}/{total} accounts)"
-                        f" | loop {_now - collection_loop_start:.1f}s | task {_now - task_start:.1f}s"
+                if trc20_balance > 0:
+                    balances_to_collect["trc20"].append(
+                        [account, symbol, trc20_balance, account_store_ids[account]]
                     )
 
-            except Exception as e:
-                logger.exception(f"{account} scan error: {e}")
-                stats["exception_num"] += 1
+            #
+            # TRX
+            #
 
-        # Sort trc20 balances by balance in descending order
-        balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
-        logger.info("TRC20 queue length: %d" % len(balances_to_collect["trc20"]))
-        # Log histogram of TRC20 balances
-        bins = [
-            5,
-            10,
-            20,
-            30,
-            40,
-            50,
-            60,
-            70,
-            80,
-            90,
-            100,
-            200,
-            300,
-            400,
-            500,
-            600,
-            700,
-            800,
-            900,
-            1000,
-            2000,
-        ]
-        histogram = collections.Counter()
-        for _, _, balance in balances_to_collect["trc20"]:
-            for b in bins:
-                if balance <= b:
-                    histogram[f"<={b}"] += 1
-                    break
-            else:
-                histogram[">=2000"] += 1
-        logger.info(
-            "TRC20 balances histogram: "
-            + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
-        )
-        trc20_total = len(balances_to_collect["trc20"])
-        trc20_sweep_start = time.monotonic()
-        for trc20_idx, (account, symbol, trc20_balance) in enumerate(
-            balances_to_collect["trc20"], start=1
-        ):
-            _retry_deadline = time.monotonic() + config.SWEEP_TRC20_RETRY_TIMEOUT
-            _retry_delay = config.SWEEP_TRC20_RETRY_INITIAL_DELAY
-            _retry_attempt = 0
-            while True:
+            while ret := 0 < config.CONCURRENT_MAX_RETRIES:
                 try:
-                    if not is_task_running(
-                        self,
-                        "app.tasks.transfer_trc20_from",
-                        args=[account, symbol],
-                    ):
-                        transfer_trc20_from(account, symbol)
+                    trx_balance = ConnectionManager.client().get_account_balance(
+                        account
+                    )
                     break
-                except Exception as e:
-                    _retry_attempt += 1
-                    if time.monotonic() + _retry_delay > _retry_deadline:
-                        logger.warning(
-                            f"{account} transfer failed after {_retry_attempt} attempt(s), giving up: {e}"
-                        )
-                        break
-                    logger.warning(
-                        f"{account} transfer error (attempt {_retry_attempt}, retrying in {_retry_delay}s): {e}"
+                except tronpy.exceptions.AddressNotFound:
+                    trx_balance = Decimal(0)
+                    break
+                except tronpy.exceptions.UnknownError as e:
+                    logger.debug(
+                        f"[store_id={account_store_ids[account]}] "
+                        f"{account} TRX balance fetch error: {e}"
                     )
-                    time.sleep(_retry_delay)
-                    _retry_delay = min(
-                        _retry_delay * 2, config.SWEEP_TRC20_RETRY_TIMEOUT
-                    )
-            if (
-                trc20_total > 0
-                and (trc20_idx * 100 // trc20_total) // _progress_interval
-                > ((trc20_idx - 1) * 100 // trc20_total) // _progress_interval
-            ):
-                _now = time.monotonic()
-                logger.info(
-                    f"scan_accounts TRC20 sweeping: {trc20_idx * 100 // trc20_total}% ({trc20_idx}/{trc20_total})"
-                    f" | loop {_now - trc20_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+                    ret += 1
+            else:
+                raise Exception(
+                    f"CONCURRENT_MAX_RETRIES reached while getting TRX balance of {account}"
                 )
 
-        # Sort trx balances by balance in descending order
-        balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
-        accounts_with_trc20 = {acc for acc, _sym, _bal in balances_to_collect["trc20"]}
-        trx_total = len(balances_to_collect["trx"])
-        trx_sweep_start = time.monotonic()
-        # logger.info(balances_to_collect["trx"])
-        for trx_idx, (account, trx_balance) in enumerate(
-            balances_to_collect["trx"], start=1
-        ):
-            try:
-                if account in accounts_with_trc20:
-                    logger.info(
-                        f"Skipping TRX sweep for {account}: account has TRC20 balance"
-                    )
-                elif not is_task_running(
-                    self, "app.tasks.transfer_trc20_from", args=[account]
-                ):
-                    # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
-                    # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
-                    # so there will be no TRX to burn for sure.
-                    transfer_trx_from(account)
-            except Exception as e:
-                logger.warning(f"{account} transfer error: {e}")
+            stats["balances"]["TRX"] += trx_balance
+
+            if config.SAVE_BALANCES_TO_DB:
+                balance_repository.upsert(account, "TRX", trx_balance)
+
+            if trx_balance > 0:
+                balances_to_collect["trx"].append(
+                    [account, trx_balance, account_store_ids[account]]
+                )
+
+            logger.debug(
+                f"Scanned {index} of {len(accounts)} accounts, found: "
+                + ", ".join([f"{v} {k}" for k, v in stats["balances"].items()])
+            )
             if (
-                trx_total > 0
-                and (trx_idx * 100 // trx_total) // _progress_interval
-                > ((trx_idx - 1) * 100 // trx_total) // _progress_interval
+                total > 0
+                and (index * 100 // total) // _progress_interval
+                > ((index - 1) * 100 // total) // _progress_interval
             ):
                 _now = time.monotonic()
                 logger.info(
-                    f"scan_accounts TRX sweeping: {trx_idx * 100 // trx_total}% ({trx_idx}/{trx_total})"
-                    f" | loop {_now - trx_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+                    f"scan_accounts balance collection: {index * 100 // total}% ({index}/{total} accounts)"
+                    f" | loop {_now - collection_loop_start:.1f}s | task {_now - task_start:.1f}s"
                 )
+
+        except Exception as e:
+            logger.exception(
+                f"[store_id={account_store_ids[account]}] {account} scan error: {e}"
+            )
+            stats["exception_num"] += 1
+
+    # Sort trc20 balances by balance in descending order
+    balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
+    logger.info("TRC20 queue length: %d" % len(balances_to_collect["trc20"]))
+    # Log histogram of TRC20 balances
+    bins = [
+        5,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+        90,
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800,
+        900,
+        1000,
+        2000,
+    ]
+    histogram = collections.Counter()
+    for _, _, balance, _ in balances_to_collect["trc20"]:
+        for b in bins:
+            if balance <= b:
+                histogram[f"<={b}"] += 1
+                break
+        else:
+            histogram[">=2000"] += 1
+    logger.info(
+        "TRC20 balances histogram: "
+        + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
+    )
+    trc20_total = len(balances_to_collect["trc20"])
+    trc20_sweep_start = time.monotonic()
+    for trc20_idx, (account, symbol, trc20_balance, store_id) in enumerate(
+        balances_to_collect["trc20"], start=1
+    ):
+        _retry_deadline = time.monotonic() + config.SWEEP_TRC20_RETRY_TIMEOUT
+        _retry_delay = config.SWEEP_TRC20_RETRY_INITIAL_DELAY
+        _retry_attempt = 0
+        while True:
+            try:
+                if not is_task_running(
+                    self,
+                    "app.tasks.transfer_trc20_from",
+                    args=[account, symbol, store_id],
+                ):
+                    transfer_trc20_from(account, symbol, store_id=store_id)
+                break
+            except Exception as e:
+                _retry_attempt += 1
+                if time.monotonic() + _retry_delay > _retry_deadline:
+                    logger.warning(
+                        f"[store_id={store_id}] {account} transfer failed after "
+                        f"{_retry_attempt} attempt(s), giving up: {e}"
+                    )
+                    break
+                logger.warning(
+                    f"[store_id={store_id}] {account} transfer error "
+                    f"(attempt {_retry_attempt}, retrying in {_retry_delay}s): {e}"
+                )
+                time.sleep(_retry_delay)
+                _retry_delay = min(
+                    _retry_delay * 2, config.SWEEP_TRC20_RETRY_TIMEOUT
+                )
+        if (
+            trc20_total > 0
+            and (trc20_idx * 100 // trc20_total) // _progress_interval
+            > ((trc20_idx - 1) * 100 // trc20_total) // _progress_interval
+        ):
+            _now = time.monotonic()
+            logger.info(
+                f"[store_id={store_id}] scan_accounts TRC20 sweeping: "
+                f"{trc20_idx * 100 // trc20_total}% ({trc20_idx}/{trc20_total})"
+                f" | loop {_now - trc20_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+            )
+
+    # Sort trx balances by balance in descending order
+    balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
+    accounts_with_trc20 = {
+        acc for acc, _sym, _bal, _store_id in balances_to_collect["trc20"]
+    }
+    trx_total = len(balances_to_collect["trx"])
+    trx_sweep_start = time.monotonic()
+    # logger.info(balances_to_collect["trx"])
+    for trx_idx, (account, trx_balance, store_id) in enumerate(
+        balances_to_collect["trx"], start=1
+    ):
+        try:
+            if account in accounts_with_trc20:
+                logger.info(
+                    f"[store_id={store_id}] Skipping TRX sweep for {account}: "
+                    "account has TRC20 balance"
+                )
+            elif not is_task_running(
+                self,
+                "app.tasks.transfer_trx_from",
+                args=[account, store_id],
+            ):
+                # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
+                # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
+                # so there will be no TRX to burn for sure.
+                transfer_trx_from(account, store_id=store_id)
+        except Exception as e:
+            logger.warning(f"[store_id={store_id}] {account} transfer error: {e}")
+        if (
+            trx_total > 0
+            and (trx_idx * 100 // trx_total) // _progress_interval
+            > ((trx_idx - 1) * 100 // trx_total) // _progress_interval
+        ):
+            _now = time.monotonic()
+            logger.info(
+                f"[store_id={store_id}] scan_accounts TRX sweeping: "
+                f"{trx_idx * 100 // trx_total}% ({trx_idx}/{trx_total})"
+                f" | loop {_now - trx_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+            )
 
     return stats
 
@@ -820,7 +823,9 @@ def vote_for_sr(self, *args, **kwargs):
     logger.info(f"Voting config is OK: {config.SR_VOTES}")
     tron_client = ConnectionManager.client()
 
-    energy_delegator_priv, energy_delegator_pub = get_energy_delegator()
+    energy_delegator_priv, energy_delegator_pub = get_energy_delegator(
+        store_id=1
+    )
 
     logger.info(f"Checking current votes for {energy_delegator_pub}")
     acc_info = tron_client.get_account(energy_delegator_pub)

@@ -4,11 +4,11 @@ import tronpy.exceptions
 from tronpy.keys import PrivateKey
 
 from .config import config
-from .db import query_db2
 from .logging import logger
 from .connection_manager import ConnectionManager
 from .wallet_encryption import wallet_encryption
 from .schemas import TronAddress
+from .repositories import KeyRepository
 
 
 class Wallet:
@@ -16,12 +16,12 @@ class Wallet:
         "decimals": {},
         "contracts": {},
     }
-    main_account = query_db2(
-        'select * from `keys` where type = "fee_deposit" ', one=True
-    )
-
-    def __init__(self, symbol="TRX"):
+    def __init__(self, symbol="TRX", store_id: int = 1):
         self.symbol = symbol
+        self.key_repository = KeyRepository(store_id=store_id)
+        self.main_account = self.key_repository.get_fee_deposit_key()
+        if not self.main_account:
+            raise RuntimeError("fee_deposit key unavailable")
         self.client = ConnectionManager.client()
         if symbol != "TRX":
             self.contract_address = config.get_contract_address(symbol)
@@ -62,11 +62,12 @@ class Wallet:
 
     def transfer(self, dst, amount, src_address: TronAddress = None):
         if src_address:
-            src_account = query_db2(
-                "select * from `keys` where public = %s", (src_address,), one=True
-            )
+            src_account = self.key_repository.get_by_public(src_address)
         else:
             src_account = self.main_account
+
+        if not src_account:
+            raise RuntimeError("source key unavailable")
 
         if self.symbol == "TRX":
             txn = self.client.trx.transfer(

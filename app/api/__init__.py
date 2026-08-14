@@ -1,19 +1,48 @@
 import traceback
 from flask import Blueprint, g, request
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import BadRequest, HTTPException
 
 from ..config import config
 from ..logging import logger
 
 api = Blueprint("api", __name__, url_prefix="/<symbol>")
+tenant_bp = Blueprint("tenant_bp", __name__, url_prefix="/tenant")
 metrics_blueprint = Blueprint("metrics_blueprint", __name__, url_prefix="/")
 staking_bp = Blueprint("staking_bp", __name__, url_prefix="/staking")
+DEFAULT_STORE_ID = 1
+
+
+def resolve_store_id() -> int:
+    marker = request.headers.get("X-Store-ID")
+    if marker is None:
+        return DEFAULT_STORE_ID
+
+    try:
+        store_id = int(marker)
+    except ValueError as exc:
+        raise BadRequest("X-Store-ID must be a positive integer") from exc
+
+    if store_id <= 0:
+        raise BadRequest("X-Store-ID must be a positive integer")
+    return store_id
 
 
 @staking_bp.before_request
 @metrics_blueprint.before_request
 @api.before_request
 def check_credentials():
+    response = authenticate()
+    if response:
+        return response
+    g.store_id = resolve_store_id()
+
+
+@tenant_bp.before_request
+def check_tenant_credentials():
+    return authenticate()
+
+
+def authenticate():
     auth = request.authorization
     if not (
         auth
@@ -41,4 +70,4 @@ def handle_exception(e):
     return {"status": "error", "msg": str(e)}
 
 
-from . import payout, views, metrics, staking
+from . import payout, tenant, views, metrics, staking
