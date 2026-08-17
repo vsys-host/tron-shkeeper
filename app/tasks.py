@@ -296,14 +296,23 @@ def transfer_trc20_from(onetime_acc, symbol, store_id: int = 1):
                 )
                 return
 
-        logger.info("Estimate the amount of energy needed to make transfer")
-        energy_needed = tron_client.get_estimated_energy(
-            onetime_publ_key,
-            contract_address,
-            "transfer(address,uint256)",
-            trx_abi.encode_single("(address,uint256)", (main_publ_key, 42)).hex(),
-        )
-        logger.info(f"Estimated amount of energy for transfer is: {energy_needed}")
+        if config.ENERGY_DELEGATION_MODE_TRC20_TRANSFER_ENERGY_ESTIMATE_OVERRIDE:
+            logger.info(
+                "Transfer energy estimate overriden to: "
+                f"{config.ENERGY_DELEGATION_MODE_TRC20_TRANSFER_ENERGY_ESTIMATE_OVERRIDE}"
+            )
+            energy_needed = (
+                config.ENERGY_DELEGATION_MODE_TRC20_TRANSFER_ENERGY_ESTIMATE_OVERRIDE
+            )
+        else:
+            logger.info("Estimate the amount of energy needed to make transfer")
+            energy_needed = tron_client.get_estimated_energy(
+                onetime_publ_key,
+                contract_address,
+                "transfer(address,uint256)",
+                trx_abi.encode_single("(address,uint256)", (main_publ_key, 42)).hex(),
+            )
+            logger.info(f"Estimated amount of energy for transfer is: {energy_needed}")
 
         logger.info("Check the energy of onetime address")
 
