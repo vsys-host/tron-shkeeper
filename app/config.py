@@ -1,12 +1,11 @@
 from decimal import Decimal
 from functools import cache
-from typing import List
 
 from pydantic import Field, Json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .schemas import TronFullnode, TronNetwork, Token, TronSymbol, SrVote
 from .exceptions import UnknownToken
+from .schemas import SrVote, Token, TronFullnode, TronNetwork, TronSymbol
 
 
 class Settings(BaseSettings):
@@ -31,10 +30,10 @@ class Settings(BaseSettings):
     API_PASSWORD: str = Field("shkeeper", alias="BTC_PASSWORD")
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
     SHKEEPER_HOST: str = "localhost:5000"
-    INTERNAL_TX_FEE: Decimal = Decimal("40")
-    TX_FEE: Decimal = Decimal("40")  # includes bandwidth, energy and activation fees
+    INTERNAL_TX_FEE: Decimal = Decimal(40)
+    TX_FEE: Decimal = Decimal(40)  # includes bandwidth, energy and activation fees
     TX_FEE_LIMIT: Decimal = Decimal(
-        "50"
+        50
     )  # max TRX tx can burn for resources (energy, bandwidth)
     BANDWIDTH_PER_TRX_TRANSFER: int = 270
     BANDWIDTH_PER_DELEGE_CALL: int = 278
@@ -48,7 +47,7 @@ class Settings(BaseSettings):
     BLOCK_SCANNER_INTERVAL_TIME: int = 3
     BLOCK_SCANNER_LAST_BLOCK_NUM_HINT: int | None = None
     # Connection manager
-    MULTISERVER_CONFIG_JSON: Json[List[TronFullnode]] | None = None
+    MULTISERVER_CONFIG_JSON: Json[list[TronFullnode]] | None = None
     MULTISERVER_REFRESH_BEST_SERVER_PERIOD: int = 20
     # Account encryption
     FORCE_WALLET_ENCRYPTION: bool = False
@@ -67,13 +66,13 @@ class Settings(BaseSettings):
     ENERGY_DELEGATION_MODE_ENERGY_ACCOUNT_PUB_KEY: str | None = None
     # Voting
     SR_VOTING: bool = False
-    SR_VOTES: Json[List[SrVote]] | None = None
+    SR_VOTES: Json[list[SrVote]] | None = None
     SR_VOTING_ALLOW_BURN_TRX: bool = False
     # Token customization
     USDT_MIN_TRANSFER_THRESHOLD: Decimal | None = None
     USDC_MIN_TRANSFER_THRESHOLD: Decimal | None = None
 
-    TOKENS: List[Token] = [
+    TOKENS: list[Token] = [
         Token(
             network=TronNetwork.mainnet,
             symbol=TronSymbol.USDT,
