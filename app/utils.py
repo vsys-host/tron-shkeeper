@@ -7,6 +7,8 @@ import time
 from typing import Literal
 import concurrent
 
+ENERGY_BLOCK_TIME_SECONDS = 3.0
+
 import tronpy.exceptions
 from flask import Flask, current_app
 from tronpy import Tron
@@ -118,6 +120,89 @@ def get_energy_delegator(store_id: int = 1) -> tuple[PrivateKey, str]:
             return get_key(KeyType.energy, store_id=store_id)
     else:
         return get_key(KeyType.fee_deposit, store_id=store_id)
+
+
+@dataclass
+class EnergyStatus:
+    limit: int
+    used: int
+    available: int
+    window_blocks: float
+    window_seconds: float
+    optimized: bool
+    recovery_rate: float
+
+
+def get_energy_status(
+    client: Tron,
+    address: str,
+    block_time_seconds: float = ENERGY_BLOCK_TIME_SECONDS,
+) -> EnergyStatus:
+    """
+    Read the current Energy state and calculate the expected recovery rate.
+
+    TRON's energy_window_size is returned with 3 decimal precision when
+    energy_window_optimized=True, so the raw value is divided by 1000.
+    """
+    resource = client.get_account_resource(address)
+    account = client.get_account(address)
+
+    energy_limit = int(resource.get("EnergyLimit", 0))
+    energy_used = int(resource.get("EnergyUsed", 0))
+    available = max(0, energy_limit - energy_used)
+
+    account_resource = account.get("account_resource", {})
+
+    raw_window = float(account_resource.get("energy_window_size", 0))
+
+    optimized = bool(account_resource.get("energy_window_optimized", False))
+
+    # With optimized windows, TRON exposes 3 decimal precision
+    # in the returned integer representation.
+    window_blocks = raw_window / 1000.0 if optimized else raw_window
+
+    window_seconds = window_blocks * block_time_seconds
+
+    recovery_rate = energy_used / window_seconds if window_seconds > 0 else 0.0
+
+    return EnergyStatus(
+        limit=energy_limit,
+        used=energy_used,
+        available=available,
+        window_blocks=window_blocks,
+        window_seconds=window_seconds,
+        optimized=optimized,
+        recovery_rate=recovery_rate,
+    )
+
+
+def estimate_energy_wait(
+    client: Tron,
+    address: str,
+    required_energy: int,
+    safety_seconds: float = 10.0,
+    block_time_seconds: float = ENERGY_BLOCK_TIME_SECONDS,
+) -> float:
+    """
+    Return how many seconds to wait until `required_energy` should be available.
+
+    Re-check the account immediately before broadcasting the transaction.
+
+    Returns 0 if enough Energy is already available.
+    """
+    status = get_energy_status(client, address, block_time_seconds)
+
+    if status.available >= required_energy:
+        return 0.0
+
+    if status.recovery_rate <= 0:
+        raise RuntimeError(
+            "Energy recovery rate is zero; cannot estimate recovery time"
+        )
+
+    missing = required_energy - status.available
+
+    return missing / status.recovery_rate + safety_seconds
 
 
 def estimateenergy(src, dst, amount, symbol):

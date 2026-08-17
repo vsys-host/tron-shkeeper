@@ -28,6 +28,7 @@ from .wallet import Wallet
 from .repositories import AllStoresKeyReader, BalanceRepository, KeyRepository
 from .utils import (
     est_vote_tx_bw_cons,
+    estimate_energy_wait,
     get_energy_delegator,
     get_key,
     has_free_bw,
@@ -719,6 +720,8 @@ def funds_sweeper(self, *args, **kwargs):
 
     trc20_row = balance_repository.get_top_trc20_balance()
 
+    skip_trc20_this_cycle = False
+
     if trc20_row:
         account = trc20_row["account"]
         symbol = trc20_row["symbol"]
@@ -729,47 +732,94 @@ def funds_sweeper(self, *args, **kwargs):
             f"{account} {balance} {symbol}"
         )
 
-        _retry_deadline = time.monotonic() + config.SWEEP_TRC20_RETRY_TIMEOUT
-        _retry_delay = config.SWEEP_TRC20_RETRY_INITIAL_DELAY
-        _retry_attempt = 0
-        result = None
-        while True:
-            try:
-                if not is_task_running(
-                    self,
-                    "app.tasks.transfer_trc20_from",
-                    args=[account, symbol, store_id],
-                ):
-                    result = transfer_trc20_from(account, symbol, store_id=store_id)
-                break
-            except Exception as e:
-                _retry_attempt += 1
-                if time.monotonic() + _retry_delay > _retry_deadline:
-                    logger.warning(
-                        f"[store_id={store_id}] {account} transfer failed after "
-                        f"{_retry_attempt} attempt(s), giving up: {e}"
-                    )
-                    break
-                logger.warning(
-                    f"[store_id={store_id}] {account} transfer error "
-                    f"(attempt {_retry_attempt}, retrying in {_retry_delay}s): {e}"
+        if config.ENERGY_DELEGATION_MODE:
+            tron_client = ConnectionManager.client()
+            _, energy_delegator_pub = get_energy_delegator(store_id=store_id)
+            _, main_publ_key = get_key(KeyType.fee_deposit, store_id=store_id)
+
+            if config.ENERGY_DELEGATION_MODE_TRC20_TRANSFER_ENERGY_ESTIMATE_OVERRIDE:
+                required_energy = (
+                    config.ENERGY_DELEGATION_MODE_TRC20_TRANSFER_ENERGY_ESTIMATE_OVERRIDE
                 )
-                time.sleep(_retry_delay)
-                _retry_delay = min(
-                    _retry_delay * 2, config.SWEEP_TRC20_RETRY_TIMEOUT
+            else:
+                required_energy = tron_client.get_estimated_energy(
+                    account,
+                    config.get_contract_address(symbol),
+                    "transfer(address,uint256)",
+                    trx_abi.encode_single(
+                        "(address,uint256)", (main_publ_key, 42)
+                    ).hex(),
                 )
 
-        if isinstance(result, dict) and result.get("status") != "error":
-            logger.info(
-                f"[store_id={store_id}] {account} TRC20 sweep succeeded, "
-                f"zeroing out {symbol} balance"
-            )
-            balance_repository.zero_out(account, symbol)
-        else:
-            logger.info(
-                f"[store_id={store_id}] {account} TRC20 sweep did not complete, "
-                "balance left unchanged"
-            )
+            try:
+                wait_seconds = estimate_energy_wait(
+                    tron_client, energy_delegator_pub, required_energy
+                )
+            except RuntimeError as e:
+                logger.warning(
+                    f"[store_id={store_id}] energy delegator {energy_delegator_pub} "
+                    f"recovery rate unavailable, skipping TRC20 sweep this cycle: {e}"
+                )
+                skip_trc20_this_cycle = True
+                wait_seconds = 0
+
+            if not skip_trc20_this_cycle and wait_seconds > config.ENERGY_WAIT_MAX_SECONDS:
+                logger.warning(
+                    f"[store_id={store_id}] energy delegator {energy_delegator_pub} "
+                    f"needs {wait_seconds:.0f}s to recover {required_energy} energy, "
+                    f"exceeds ENERGY_WAIT_MAX_SECONDS={config.ENERGY_WAIT_MAX_SECONDS}. "
+                    "Skipping TRC20 sweep this cycle."
+                )
+                skip_trc20_this_cycle = True
+            elif not skip_trc20_this_cycle and wait_seconds > 0:
+                logger.info(
+                    f"[store_id={store_id}] waiting {wait_seconds:.0f}s for energy "
+                    f"delegator {energy_delegator_pub} to recover {required_energy} energy"
+                )
+                time.sleep(wait_seconds)
+
+        if not skip_trc20_this_cycle:
+            _retry_deadline = time.monotonic() + config.SWEEP_TRC20_RETRY_TIMEOUT
+            _retry_delay = config.SWEEP_TRC20_RETRY_INITIAL_DELAY
+            _retry_attempt = 0
+            result = None
+            while True:
+                try:
+                    if not is_task_running(
+                        self,
+                        "app.tasks.transfer_trc20_from",
+                        args=[account, symbol, store_id],
+                    ):
+                        result = transfer_trc20_from(account, symbol, store_id=store_id)
+                    break
+                except Exception as e:
+                    _retry_attempt += 1
+                    if time.monotonic() + _retry_delay > _retry_deadline:
+                        logger.warning(
+                            f"[store_id={store_id}] {account} transfer failed after "
+                            f"{_retry_attempt} attempt(s), giving up: {e}"
+                        )
+                        break
+                    logger.warning(
+                        f"[store_id={store_id}] {account} transfer error "
+                        f"(attempt {_retry_attempt}, retrying in {_retry_delay}s): {e}"
+                    )
+                    time.sleep(_retry_delay)
+                    _retry_delay = min(
+                        _retry_delay * 2, config.SWEEP_TRC20_RETRY_TIMEOUT
+                    )
+
+            if isinstance(result, dict) and result.get("status") != "error":
+                logger.info(
+                    f"[store_id={store_id}] {account} TRC20 sweep succeeded, "
+                    f"zeroing out {symbol} balance"
+                )
+                balance_repository.zero_out(account, symbol)
+            else:
+                logger.info(
+                    f"[store_id={store_id}] {account} TRC20 sweep did not complete, "
+                    "balance left unchanged"
+                )
     else:
         logger.info("funds_sweeper: no TRC20 candidates found")
 
@@ -803,7 +853,7 @@ def funds_sweeper(self, *args, **kwargs):
                 "balance left unchanged"
             )
 
-    if trc20_row:
+    if trc20_row and not skip_trc20_this_cycle:
         logger.info("funds_sweeper: TRC20 candidate processed, re-triggering funds_sweeper")
         funds_sweeper.delay()
     else:

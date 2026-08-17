@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     ENERGY_DELEGATION_MODE_TRC20_TRANSFER_ENERGY_ESTIMATE_OVERRIDE: int | None = None
     ENERGY_DELEGATION_MODE_SEPARATE_BALANCE_AND_ENERGY_ACCOUNTS: bool = False
     ENERGY_DELEGATION_MODE_ENERGY_ACCOUNT_PUB_KEY: str | None = None
+    # Max seconds funds_sweeper will wait for delegator energy recovery before skipping the TRC20 sweep this cycle
+    ENERGY_WAIT_MAX_SECONDS: int = 3600
     # Voting
     SR_VOTING: bool = False
     SR_VOTES: Json[list[SrVote]] | None = None
