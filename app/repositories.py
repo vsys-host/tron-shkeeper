@@ -20,6 +20,16 @@ class BalanceRepository:
     def zero_out(self, account: str, symbol: str) -> None:
         self.upsert(account, symbol, Decimal(0))
 
+    def increment(self, account: str, symbol: str, amount: Decimal) -> None:
+        """Add to a tracked balance, e.g. when a deposit is observed by the block scanner."""
+        query_db2(
+            "INSERT INTO tron_balances (account, symbol, balance) "
+            "VALUES (%s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance), "
+            "updated_at = CURRENT_TIMESTAMP",
+            (account, symbol, amount),
+        )
+
     def get_top_trc20_balance(self) -> dict[str, Any] | None:
         """Largest positive non-TRX balance held by any onetime account."""
         row = cast(

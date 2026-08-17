@@ -23,7 +23,7 @@ from .exceptions import (
     BadContractResult,
 )
 from .connection_manager import ConnectionManager
-from .repositories import AllStoresKeyReader
+from .repositories import AllStoresKeyReader, BalanceRepository
 
 
 class BlockScanner:
@@ -173,8 +173,6 @@ class BlockScanner:
             raise NotificationFailed(res)
 
     def scan(self, block_num: int) -> bool:
-        from .tasks import transfer_trc20_from, transfer_trx_from
-
         try:
             key_reader = AllStoresKeyReader()
             block = self.download_block(block_num)
@@ -236,26 +234,11 @@ class BlockScanner:
                                     f"owner: {tron_tx.dst_addr}"
                                 )
                                 continue
-                            # Send funds to main account
-                            if tron_tx.is_trc20:
-                                if config.DEVMODE_CELERY_NODELAY:
-                                    transfer_trc20_from(
-                                        tron_tx.dst_addr, tron_tx.symbol, store_id
-                                    )
-                                else:
-                                    transfer_trc20_from.delay(
-                                        tron_tx.dst_addr, tron_tx.symbol, store_id
-                                    )
-                            else:
-                                if config.ENERGY_DELEGATION_MODE:
-                                    # Don't send TRX immediately to not waste free bandwidth.
-                                    # Funds will be sweeped by the funds_sweeper task
-                                    # if the account does not hold TRC20 tokens.
-                                    pass
-                                else:
-                                    transfer_trx_from.delay(
-                                        tron_tx.dst_addr, store_id
-                                    )
+                            # Track the deposit; funds_sweeper picks it up and sweeps it eventually
+                            symbol = tron_tx.symbol if tron_tx.is_trc20 else "TRX"
+                            BalanceRepository().increment(
+                                tron_tx.dst_addr, symbol, tron_tx.amount
+                            )
                         else:
                             logger.warning(
                                 f"Not sending notification for tx with status {tron_tx.status}: {tron_tx}"
