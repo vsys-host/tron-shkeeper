@@ -579,11 +579,14 @@ def is_task_running(task_instance, name: str, args: List = None, kwargs: Dict = 
 
 @celery.task(bind=True)
 @skip_if_running
-def scan_accounts(self, *args, **kwargs):
+def balance_collector(self, *args, **kwargs):
     """
-    Scans onetime accounts balances (trc20, trx),
-    saves it to database and transfers to main account.
+    Scans onetime accounts balances (trc20, trx) and saves them to the database.
+    Sweeping is handled separately by funds_sweeper.
     """
+    if is_task_running(self, "app.tasks.funds_sweeper"):
+        logger.info("balance_collector: funds_sweeper is running, skipping this run")
+        return "funds_sweeper is running, skipping"
 
     task_start = time.monotonic()
     balance_repository = BalanceRepository()
@@ -593,14 +596,14 @@ def scan_accounts(self, *args, **kwargs):
         "balances": collections.defaultdict(Decimal),
         "exception_num": 0,
     }
+    found_positive_balance = False
 
     account_rows = AllStoresKeyReader().list_onetime_accounts()
     accounts = [row["public"] for row in account_rows]
     account_store_ids = {row["public"]: int(row["store_id"]) for row in account_rows}
 
-    balances_to_collect = {"trx": [], "trc20": []}
-
     total = len(accounts)
+    logger.info(f"balance_collector: scanning {total} onetime accounts")
     collection_loop_start = time.monotonic()
     for index, account in enumerate(accounts, start=1):
         try:
@@ -636,9 +639,7 @@ def scan_accounts(self, *args, **kwargs):
                     balance_repository.upsert(account, symbol, trc20_balance)
 
                 if trc20_balance > 0:
-                    balances_to_collect["trc20"].append(
-                        [account, symbol, trc20_balance, account_store_ids[account]]
-                    )
+                    found_positive_balance = True
 
             #
             # TRX
@@ -670,9 +671,7 @@ def scan_accounts(self, *args, **kwargs):
                 balance_repository.upsert(account, "TRX", trx_balance)
 
             if trx_balance > 0:
-                balances_to_collect["trx"].append(
-                    [account, trx_balance, account_store_ids[account]]
-                )
+                found_positive_balance = True
 
             logger.debug(
                 f"Scanned {index} of {len(accounts)} accounts, found: "
@@ -685,7 +684,7 @@ def scan_accounts(self, *args, **kwargs):
             ):
                 _now = time.monotonic()
                 logger.info(
-                    f"scan_accounts balance collection: {index * 100 // total}% ({index}/{total} accounts)"
+                    f"balance_collector: {index * 100 // total}% ({index}/{total} accounts)"
                     f" | loop {_now - collection_loop_start:.1f}s | task {_now - task_start:.1f}s"
                 )
 
@@ -695,53 +694,45 @@ def scan_accounts(self, *args, **kwargs):
             )
             stats["exception_num"] += 1
 
-    # Sort trc20 balances by balance in descending order
-    balances_to_collect["trc20"].sort(key=lambda x: x[2], reverse=True)
-    logger.info("TRC20 queue length: %d" % len(balances_to_collect["trc20"]))
-    # Log histogram of TRC20 balances
-    bins = [
-        5,
-        10,
-        20,
-        30,
-        40,
-        50,
-        60,
-        70,
-        80,
-        90,
-        100,
-        200,
-        300,
-        400,
-        500,
-        600,
-        700,
-        800,
-        900,
-        1000,
-        2000,
-    ]
-    histogram = collections.Counter()
-    for _, _, balance, _ in balances_to_collect["trc20"]:
-        for b in bins:
-            if balance <= b:
-                histogram[f"<={b}"] += 1
-                break
-        else:
-            histogram[">=2000"] += 1
-    logger.info(
-        "TRC20 balances histogram: "
-        + ", ".join([f"{k}: {v}" for k, v in histogram.items()])
-    )
-    trc20_total = len(balances_to_collect["trc20"])
-    trc20_sweep_start = time.monotonic()
-    for trc20_idx, (account, symbol, trc20_balance, store_id) in enumerate(
-        balances_to_collect["trc20"], start=1
-    ):
+    if found_positive_balance:
+        logger.info("balance_collector: positive balances found, triggering funds_sweeper")
+        funds_sweeper.delay()
+    else:
+        logger.info("balance_collector: no positive balances found, not triggering funds_sweeper")
+
+    return stats
+
+
+@celery.task(bind=True)
+@skip_if_running
+def funds_sweeper(self, *args, **kwargs):
+    """
+    Sweeps the onetime account with the largest TRC20 balance, then unconditionally
+    sweeps every onetime account holding only TRX. Chains itself while TRC20 balances
+    remain, or triggers balance_collector once none are left.
+    """
+    if is_task_running(self, "app.tasks.balance_collector"):
+        logger.info("funds_sweeper: balance_collector is running, skipping this run")
+        return "balance_collector is running, skipping"
+
+    balance_repository = BalanceRepository()
+
+    trc20_row = balance_repository.get_top_trc20_balance()
+
+    if trc20_row:
+        account = trc20_row["account"]
+        symbol = trc20_row["symbol"]
+        balance = trc20_row["balance"]
+        store_id = trc20_row["store_id"]
+        logger.info(
+            f"[store_id={store_id}] funds_sweeper: top TRC20 candidate "
+            f"{account} {balance} {symbol}"
+        )
+
         _retry_deadline = time.monotonic() + config.SWEEP_TRC20_RETRY_TIMEOUT
         _retry_delay = config.SWEEP_TRC20_RETRY_INITIAL_DELAY
         _retry_attempt = 0
+        result = None
         while True:
             try:
                 if not is_task_running(
@@ -749,7 +740,7 @@ def scan_accounts(self, *args, **kwargs):
                     "app.tasks.transfer_trc20_from",
                     args=[account, symbol, store_id],
                 ):
-                    transfer_trc20_from(account, symbol, store_id=store_id)
+                    result = transfer_trc20_from(account, symbol, store_id=store_id)
                 break
             except Exception as e:
                 _retry_attempt += 1
@@ -767,36 +758,29 @@ def scan_accounts(self, *args, **kwargs):
                 _retry_delay = min(
                     _retry_delay * 2, config.SWEEP_TRC20_RETRY_TIMEOUT
                 )
-        if (
-            trc20_total > 0
-            and (trc20_idx * 100 // trc20_total) // _progress_interval
-            > ((trc20_idx - 1) * 100 // trc20_total) // _progress_interval
-        ):
-            _now = time.monotonic()
-            logger.info(
-                f"[store_id={store_id}] scan_accounts TRC20 sweeping: "
-                f"{trc20_idx * 100 // trc20_total}% ({trc20_idx}/{trc20_total})"
-                f" | loop {_now - trc20_sweep_start:.1f}s | task {_now - task_start:.1f}s"
-            )
 
-    # Sort trx balances by balance in descending order
-    balances_to_collect["trx"].sort(key=lambda x: x[1], reverse=True)
-    accounts_with_trc20 = {
-        acc for acc, _sym, _bal, _store_id in balances_to_collect["trc20"]
-    }
-    trx_total = len(balances_to_collect["trx"])
-    trx_sweep_start = time.monotonic()
-    # logger.info(balances_to_collect["trx"])
-    for trx_idx, (account, trx_balance, store_id) in enumerate(
-        balances_to_collect["trx"], start=1
-    ):
+        if isinstance(result, dict) and result.get("status") != "error":
+            logger.info(
+                f"[store_id={store_id}] {account} TRC20 sweep succeeded, "
+                f"zeroing out {symbol} balance"
+            )
+            balance_repository.zero_out(account, symbol)
+        else:
+            logger.info(
+                f"[store_id={store_id}] {account} TRC20 sweep did not complete, "
+                "balance left unchanged"
+            )
+    else:
+        logger.info("funds_sweeper: no TRC20 candidates found")
+
+    trx_only_rows = balance_repository.list_trx_only_balances()
+    logger.info(f"funds_sweeper: {len(trx_only_rows)} TRX-only account(s) to sweep")
+    for row in trx_only_rows:
+        account = row["account"]
+        store_id = row["store_id"]
+        result = None
         try:
-            if account in accounts_with_trc20:
-                logger.info(
-                    f"[store_id={store_id}] Skipping TRX sweep for {account}: "
-                    "account has TRC20 balance"
-                )
-            elif not is_task_running(
+            if not is_task_running(
                 self,
                 "app.tasks.transfer_trx_from",
                 args=[account, store_id],
@@ -804,22 +788,27 @@ def scan_accounts(self, *args, **kwargs):
                 # We don't need to check if account has a free bandwidth because tx will raise tronpy.exceptions.ValidationError
                 # if there is not enough TRX to burn for bandwidth. We are sending the entire TRX balance,
                 # so there will be no TRX to burn for sure.
-                transfer_trx_from(account, store_id=store_id)
+                result = transfer_trx_from(account, store_id=store_id)
         except Exception as e:
             logger.warning(f"[store_id={store_id}] {account} transfer error: {e}")
-        if (
-            trx_total > 0
-            and (trx_idx * 100 // trx_total) // _progress_interval
-            > ((trx_idx - 1) * 100 // trx_total) // _progress_interval
-        ):
-            _now = time.monotonic()
+            continue
+        if isinstance(result, dict) and result.get("status") != "error":
             logger.info(
-                f"[store_id={store_id}] scan_accounts TRX sweeping: "
-                f"{trx_idx * 100 // trx_total}% ({trx_idx}/{trx_total})"
-                f" | loop {_now - trx_sweep_start:.1f}s | task {_now - task_start:.1f}s"
+                f"[store_id={store_id}] {account} TRX sweep succeeded, zeroing out balance"
+            )
+            balance_repository.zero_out(account, "TRX")
+        else:
+            logger.info(
+                f"[store_id={store_id}] {account} TRX sweep did not complete, "
+                "balance left unchanged"
             )
 
-    return stats
+    if trc20_row:
+        logger.info("funds_sweeper: TRC20 candidate processed, re-triggering funds_sweeper")
+        funds_sweeper.delay()
+    else:
+        logger.info("funds_sweeper: no TRC20 candidates left, triggering balance_collector")
+        balance_collector.delay()
 
 
 @celery.task(bind=True)
@@ -913,4 +902,4 @@ def setup_periodic_tasks(sender: Celery, **kwargs):
     if config.SR_VOTING:
         vote_for_sr.delay()
 
-    sender.add_periodic_task(config.BALANCES_RESCAN_PERIOD, scan_accounts.s())
+    sender.add_periodic_task(config.BALANCES_RESCAN_PERIOD, funds_sweeper.s())

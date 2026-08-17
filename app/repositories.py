@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 from .db import query_db2
+from .logging import logger
 
 
 class BalanceRepository:
@@ -15,6 +16,48 @@ class BalanceRepository:
             "updated_at = CURRENT_TIMESTAMP",
             (account, symbol, balance),
         )
+
+    def zero_out(self, account: str, symbol: str) -> None:
+        self.upsert(account, symbol, Decimal(0))
+
+    def get_top_trc20_balance(self) -> dict[str, Any] | None:
+        """Largest positive non-TRX balance held by any onetime account."""
+        row = cast(
+            dict[str, Any] | None,
+            query_db2(
+                "SELECT tb.account, tb.symbol, tb.balance, k.store_id "
+                "FROM tron_balances tb "
+                "JOIN `keys` k ON k.public = tb.account "
+                "WHERE k.type = %s AND tb.symbol != %s AND tb.balance > 0 "
+                "ORDER BY tb.balance DESC LIMIT 1",
+                ("onetime", "TRX"),
+                one=True,
+            ),
+        )
+        if not row:
+            logger.debug("get_top_trc20_balance: no TRC20 candidates found")
+        return row
+
+    def list_trx_only_balances(self) -> list[dict[str, Any]]:
+        """Onetime accounts holding TRX but no positive TRC20 balance, largest first."""
+        rows = cast(
+            list[dict[str, Any]],
+            query_db2(
+                "SELECT tb.account, tb.balance, k.store_id "
+                "FROM tron_balances tb "
+                "JOIN `keys` k ON k.public = tb.account "
+                "WHERE k.type = %s AND tb.symbol = %s AND tb.balance > 0 "
+                "AND tb.account NOT IN ("
+                "SELECT account FROM tron_balances WHERE symbol != %s AND balance > 0"
+                ") "
+                "ORDER BY tb.balance DESC",
+                ("onetime", "TRX", "TRX"),
+            )
+            or [],
+        )
+        if not rows:
+            logger.debug("list_trx_only_balances: no TRX-only candidates found")
+        return rows
 
 
 class KeyRepository:

@@ -9,7 +9,7 @@
 - **Payout tasks:** payout preparation, execution, and result notifications propagate `store_id`. Existing task callers remain compatible through a default of `1`.
 - **Sweep tasks:** TRX/TRC20 transfers and energy undelegation receive the owning store ID.
 - **Block scanner:** watched-address discovery is global, but each detected address is resolved to its owner before a sweep task is dispatched. Stale addresses are not swept.
-- **Balance scan account ownership:** `scan_accounts` discovers onetime accounts across stores and carries each account's owner ID through balance queues and sweep calls.
+- **Balance scan account ownership:** `balance_collector` discovers onetime accounts across stores and carries each account's owner ID into `tron_balances`; `funds_sweeper` reads it back via `keys.store_id` for sweep calls.
 - **Public address ownership:** `keys.public` is globally unique, allowing deterministic address-to-store lookup.
 
 ## Not tenancy-ready

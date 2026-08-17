@@ -249,7 +249,7 @@ class BlockScanner:
                             else:
                                 if config.ENERGY_DELEGATION_MODE:
                                     # Don't send TRX immediately to not waste free bandwidth.
-                                    # Funds will be sweeped by scan_accounts task
+                                    # Funds will be sweeped by the funds_sweeper task
                                     # if the account does not hold TRC20 tokens.
                                     pass
                                 else:
