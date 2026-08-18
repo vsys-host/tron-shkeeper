@@ -851,7 +851,7 @@ def funds_sweeper(self, *args, **kwargs):
                 "balance left unchanged"
             )
 
-    if trc20_row and not skip_trc20_this_cycle:
+    if trc20_row:
         logger.info("funds_sweeper: TRC20 candidate processed, re-triggering funds_sweeper")
         funds_sweeper.delay()
     else:
