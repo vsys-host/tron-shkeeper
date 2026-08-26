@@ -10,6 +10,8 @@ import requests
 from tronpy.abi import trx_abi
 from eth_abi.exceptions import NonEmptyPaddingBytes, InsufficientDataBytes
 
+from app.tasks import funds_sweeper
+
 from .schemas import TronTransaction
 
 from .config import config
@@ -234,11 +236,11 @@ class BlockScanner:
                                     f"owner: {tron_tx.dst_addr}"
                                 )
                                 continue
-                            # Track the deposit; funds_sweeper picks it up and sweeps it eventually
                             symbol = tron_tx.symbol if tron_tx.is_trc20 else "TRX"
                             BalanceRepository().increment(
                                 tron_tx.dst_addr, symbol, tron_tx.amount
                             )
+                            funds_sweeper.delay()
                         else:
                             logger.warning(
                                 f"Not sending notification for tx with status {tron_tx.status}: {tron_tx}"
