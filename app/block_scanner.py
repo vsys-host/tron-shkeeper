@@ -355,7 +355,7 @@ def block_scanner_stats(bs: BlockScanner):
             if abs(h - b_now) <= 1:
                 eta = "in sync"
             logger.info(
-                f"Scan stats: accs={bs.count_watched_accounts()} wallet_last_block={b_now} "
+                f"accs={bs.count_watched_accounts()} wallet_last_block={b_now} "
                 f"fullnode_last_block={h} diff={h - b_now} bps={ss:.1f} eta={eta} "
             )
         except Exception as e:
