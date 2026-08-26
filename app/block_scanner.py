@@ -10,8 +10,6 @@ import requests
 from tronpy.abi import trx_abi
 from eth_abi.exceptions import NonEmptyPaddingBytes, InsufficientDataBytes
 
-from .tasks import funds_sweeper
-
 from .schemas import TronTransaction
 
 from .config import config
@@ -91,7 +89,6 @@ class BlockScanner:
     @classmethod
     def count_watched_accounts(cls):
         return len(cls.WATCHED_ACCOUNTS)
-
 
     def get_last_seen_block_num(self) -> int:
         row = query_db2(
@@ -218,9 +215,7 @@ class BlockScanner:
                         and tron_tx.src_addr in valid_addresses
                         and tron_tx.dst_addr in valid_addresses
                     ):
-                        logger.info(
-                            f"Ignoring local TRX tx: {tron_tx}"
-                        )
+                        logger.info(f"Ignoring local TRX tx: {tron_tx}")
                         continue
 
                     if tron_tx.dst_addr in valid_addresses:
@@ -240,6 +235,8 @@ class BlockScanner:
                             BalanceRepository().increment(
                                 tron_tx.dst_addr, symbol, tron_tx.amount
                             )
+                            from .tasks import funds_sweeper
+
                             funds_sweeper.delay()
                         else:
                             logger.warning(

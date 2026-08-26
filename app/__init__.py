@@ -4,11 +4,6 @@ from flask import Flask
 from app.db import query_db2
 
 from .config import config
-from . import block_scanner
-from . import connection_manager
-from .repositories import AllStoresKeyReader, KeyRepository
-from .wallet_encryption import wallet_encryption
-
 
 celery = Celery(
     __name__,
@@ -19,6 +14,11 @@ celery = Celery(
     result_serializer="pickle",
     result_accept_content=["pickle"],
 )
+
+from . import block_scanner
+from . import connection_manager
+from .repositories import AllStoresKeyReader, KeyRepository
+from .wallet_encryption import wallet_encryption
 
 
 def create_app():
@@ -47,9 +47,7 @@ def create_app():
 
     key_reader = AllStoresKeyReader()
     key_repository = KeyRepository(store_id=1)
-    block_scanner.BlockScanner.set_watched_accounts(
-        key_reader.list_watched_addresses()
-    )
+    block_scanner.BlockScanner.set_watched_accounts(key_reader.list_watched_addresses())
 
     from . import utils
 
