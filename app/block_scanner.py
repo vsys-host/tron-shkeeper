@@ -10,7 +10,7 @@ import requests
 from tronpy.abi import trx_abi
 from eth_abi.exceptions import NonEmptyPaddingBytes, InsufficientDataBytes
 
-from app.tasks import funds_sweeper
+from .tasks import funds_sweeper
 
 from .schemas import TronTransaction
 
