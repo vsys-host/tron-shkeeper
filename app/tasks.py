@@ -272,17 +272,20 @@ def transfer_trc20_from(onetime_acc, symbol, store_id: int = 1):
                     )
                     return
 
-            logger.info(f"Activating {onetime_publ_key} by sending 0.1 TRX")
+            activation_amount = Decimal("0.00001")
+            logger.info(
+                f"Activating {onetime_publ_key} by sending {activation_amount} TRX"
+            )
             tx_trx = tron_client.trx.transfer(
                 main_publ_key,
                 onetime_publ_key,
-                int(0.1 * 1_000_000),
+                int(activation_amount * 1_000_000),
             )
             tx_trx._raw_data["expiration"] = current_timestamp() + 60_000
             tx_trx = tx_trx.build()
             tx_trx = tx_trx.sign(main_priv_key)
             tx_trx_res = tx_trx.broadcast().wait()
-            logger.info(f"0.1 TRX sent. Details: {tx_trx_res}")
+            logger.info(f"{activation_amount} TRX sent. Details: {tx_trx_res}")
             onetime_address_resources = tron_client.get_account_resource(
                 onetime_publ_key
             )
