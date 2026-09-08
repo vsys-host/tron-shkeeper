@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     SHKEEPER_HOST: str = "localhost:5000"
     INTERNAL_TX_FEE: Decimal = Decimal(20)
     TX_FEE: Decimal = Decimal(20)  # includes bandwidth, energy and activation fees
+    TRX_PAYOUT_FEE: Decimal = Decimal(1)  # per-transfer fee for native TRX multipayouts
     TX_FEE_LIMIT: Decimal = Decimal(
         50
     )  # max TRX tx can burn for resources (energy, bandwidth)

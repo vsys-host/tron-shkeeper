@@ -42,20 +42,35 @@ def multipayout():
         if transfer["amount"] <= 0:
             raise Exception(f"Payout amount should be a positive number: {transfer}")
 
-    wallet = Wallet(g.symbol, store_id=g.store_id)
-    balance = wallet.balance
     need_tokens = sum([transfer["amount"] for transfer in payout_list])
-    if balance < need_tokens:
-        pass
-        # raise Exception(f"Not enough {g.symbol} tokens to make all payouts. Has: {balance}, need: {need_tokens}")
 
-    need_currency = len(payout_list) * config.TX_FEE
-    trx_balance = Wallet(store_id=g.store_id).balance
-    if trx_balance < need_currency:
-        raise Exception(
-            f"Not enough TRX tokens at fee-deposit account {wallet.main_account} to pay payout fees. "
-            f"Has: {trx_balance}, need: {need_currency}"
-        )
+    if g.symbol == "TRX":
+        # native currency: transfer amounts and fees are drawn from the same balance
+        wallet = Wallet(g.symbol, store_id=g.store_id)
+        balance = wallet.balance
+        need_currency = len(payout_list) * config.TRX_PAYOUT_FEE
+        need_total = need_tokens + need_currency
+        if balance < need_total:
+            raise Exception(
+                f"Not enough TRX at fee-deposit account {wallet.main_account} to make all payouts and pay fees. "
+                f"Has: {balance}, need: {need_total}"
+            )
+        trx_balance = balance
+    else:
+        wallet = Wallet(g.symbol, store_id=g.store_id)
+        balance = wallet.balance
+        if balance < need_tokens:
+            raise Exception(
+                f"Not enough {g.symbol} tokens to make all payouts. Has: {balance}, need: {need_tokens}"
+            )
+
+        need_currency = len(payout_list) * config.TX_FEE
+        trx_balance = Wallet(store_id=g.store_id).balance
+        if trx_balance < need_currency:
+            raise Exception(
+                f"Not enough TRX tokens at fee-deposit account {wallet.main_account} to pay payout fees. "
+                f"Has: {trx_balance}, need: {need_currency}"
+            )
 
     if "dryrun" in request.args:
         return {
