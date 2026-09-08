@@ -52,7 +52,7 @@ def multipayout():
         need_total = need_tokens + need_currency
         if balance < need_total:
             raise Exception(
-                f"Not enough TRX at fee-deposit account {wallet.main_account} to make all payouts and pay fees. "
+                f"Not enough TRX to make all payouts and pay fees. "
                 f"Has: {balance}, need: {need_total}"
             )
         trx_balance = balance
@@ -68,7 +68,7 @@ def multipayout():
         trx_balance = Wallet(store_id=g.store_id).balance
         if trx_balance < need_currency:
             raise Exception(
-                f"Not enough TRX tokens at fee-deposit account {wallet.main_account} to pay payout fees. "
+                f"Not enough TRX tokens to pay payout fees. "
                 f"Has: {trx_balance}, need: {need_currency}"
             )
 
