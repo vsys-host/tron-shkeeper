@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     API_PASSWORD: str = Field("shkeeper", alias="BTC_PASSWORD")
     SHKEEPER_BACKEND_KEY: str = "shkeeper"
     SHKEEPER_HOST: str = "localhost:5000"
-    INTERNAL_TX_FEE: Decimal = Decimal(40)
-    TX_FEE: Decimal = Decimal(40)  # includes bandwidth, energy and activation fees
+    INTERNAL_TX_FEE: Decimal = Decimal(20)
+    TX_FEE: Decimal = Decimal(20)  # includes bandwidth, energy and activation fees
     TX_FEE_LIMIT: Decimal = Decimal(
         50
     )  # max TRX tx can burn for resources (energy, bandwidth)
