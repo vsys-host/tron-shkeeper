@@ -201,6 +201,11 @@ def transfer_trc20_from(onetime_acc, symbol, store_id: int = 1):
     logger.info(f"Check ONETIME={onetime_publ_key} {symbol} balance")
     min_threshold = config.get_min_transfer_threshold(symbol)
     balance = Decimal(token_balance) / 10**precision
+    if balance == 0:
+        # already sweeped but db balance is not updated for some reason
+        # return something true-like for balance to be zeroed by the caller
+        return {"status": "success", "info": "already sweeped"}
+
     if balance <= min_threshold:
         logger.warning(
             f"Treshold not reached for {onetime_publ_key}. Has: {balance} {symbol} need: {min_threshold} {symbol}. Terminating transfer."
