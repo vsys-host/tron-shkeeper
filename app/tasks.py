@@ -536,7 +536,7 @@ def transfer_trx_from(onetime_publ_key, store_id: int = 1):
 
     onetime_acc_balance = tron_client.get_account_balance(onetime_publ_key)
     if onetime_acc_balance == 0:
-        return {"status": "error", "error": "skipping 0 TRX account"}
+        return {"status": "success", "info": "already sweeped"}
 
     tx_trx = tron_client.trx.transfer(
         onetime_publ_key, main_publ_key, int(onetime_acc_balance * 1_000_000)
